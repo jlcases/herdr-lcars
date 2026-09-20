@@ -498,6 +498,7 @@ function renderEngines() {
   $('engine-accounts').innerHTML = engineOverviewHTML(state.accounts, {
     error: state.accountProfilesError,
     agents: state.agents,
+    sessions: state.sessions,
     engineKinds: state.engineKinds,
   });
 }

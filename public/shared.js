@@ -181,20 +181,28 @@ export function accountGaugesHTML(accounts, { error = null, agentCounts = {} } =
  * Resume el inventario sin equiparar «motor» con «cuenta»: un motor puede estar activo y no
  * publicar cuota, y un proveedor puede tener varias cuentas. La vista decide dónde colocarlo.
  */
-export function engineOverviewHTML(accounts, { error = null, agents = [], engineKinds = [] } = {}) {
+export function engineOverviewHTML(accounts, { error = null, agents = [], sessions = {}, engineKinds = [] } = {}) {
   const counts = Object.create(null);
+  const agentsByKind = new Map();
   for (const agent of agents) {
     const kind = String(agent?.agent || '').toLowerCase();
-    if (kind) counts[kind] = (counts[kind] || 0) + 1;
+    if (!kind) continue;
+    counts[kind] = (counts[kind] || 0) + 1;
+    if (!agentsByKind.has(kind)) agentsByKind.set(kind, []);
+    agentsByKind.get(kind).push(agent);
   }
   const measured = new Set((accounts || []).map((account) => account.provider).filter(Boolean));
   const activeKinds = Object.keys(counts).sort((a, b) => a.localeCompare(b));
   const activeWithoutQuota = activeKinds.filter((kind) => !measured.has(kind));
   const knownKinds = [...new Set([...(engineKinds || []), ...activeKinds, ...measured])];
   const available = knownKinds.filter((kind) => !counts[kind] && !measured.has(kind));
-  const unmetered = activeWithoutQuota.map((kind) => `<div class="engine-chip active">
-    <strong>${esc(ENGINE_LABEL[kind] || kind)}</strong><span>${esc(tp('unit.agent', counts[kind]))}</span><small>${esc(t('engine.unpublishedQuota'))}</small>
-  </div>`).join('');
+  const unmetered = activeWithoutQuota.map((kind) => {
+    const live = agentsByKind.get(kind) || [];
+    const allLocal = live.length > 0 && live.every((agent) => sessions?.[agent.sessionId]?.local === true);
+    return `<div class="engine-chip active">
+      <strong>${esc(ENGINE_LABEL[kind] || kind)}</strong><span>${esc(tp('unit.agent', counts[kind]))}</span><small>${esc(t(allLocal ? 'engine.localNoQuota' : 'engine.unpublishedQuota'))}</small>
+    </div>`;
+  }).join('');
   const availableText = available.map((kind) => ENGINE_LABEL[kind] || kind).join(' · ');
   return `<div class="engine-help">${esc(t('engine.help'))}</div>
     <div class="acct-list">${accountGaugesHTML(accounts, { error, agentCounts: counts })}</div>

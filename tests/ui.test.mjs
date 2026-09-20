@@ -109,6 +109,17 @@ test('motores: separa agentes activos de cuentas con telemetría de cuota', () =
   assert.match(html, /Codex \(OpenAI\) · Grok · OpenCode · Pi/);
 });
 
+test('motores: un Pi local no se presenta como una cuota remota desconocida', () => {
+  const html = engineOverviewHTML([], {
+    agents: [{ agent: 'pi', sessionId: 'pi-local-1' }],
+    sessions: { 'pi-local-1': { provider: 'mlx', local: true } },
+    engineKinds: ['pi'],
+  });
+  assert.match(html, /Pi/);
+  assert.match(html, /local · sin cuota de cuenta/);
+  assert.doesNotMatch(html, /cuota no publicada/);
+});
+
 test('detalle del sistema: un workspace conserva visibles e identificables todos sus agentes', () => {
   const agents = [
     { paneId: 'wB:p1', workspaceLabel: 'multimodal', tabLabel: 'core', agent: 'codex', status: 'working', statusSince: Date.now() - 20_000, title: 'Recupera la conversación', cwd: '/repo/worktrees/videos/core', sessionId: 's1' },

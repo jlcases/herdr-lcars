@@ -3,18 +3,41 @@
 // Lo delicado es la última línea: mientras el escritor está a medias, leerla y parsearla daría basura,
 // así que solo se consume si parsea entera; si no, el offset retrocede hasta su principio para
 // releerla completa en la siguiente pasada. Esto estaba copiado en tres seguidores distintos.
-import fs from 'node:fs';
+import { constants } from 'node:fs';
 import fsp from 'node:fs/promises';
-import readline from 'node:readline';
 
 const MAX_READ_BYTES = 16 * 1024 * 1024;
 const MAX_LINE_BYTES = 8 * 1024 * 1024;
 const SCAN_BUFFER_BYTES = 64 * 1024;
 
+async function openRegularNoFollow(file) {
+  // Windows no expone O_NOFOLLOW. Sus ACL protegen el perfil, pero aun así rechazamos el último
+  // componente si ya es un enlace. POSIX hace la comprobación atómica al abrir.
+  if (!constants.O_NOFOLLOW && (await fsp.lstat(file)).isSymbolicLink()) {
+    throw Object.assign(new Error('no se siguen enlaces simbólicos'), { code: 'ELOOP' });
+  }
+  const handle = await fsp.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  const stat = await handle.stat();
+  if (!stat.isFile()) {
+    await handle.close();
+    throw Object.assign(new Error('se esperaba un fichero regular'), { code: 'INVALID_FILE_TYPE' });
+  }
+  return { handle, stat };
+}
+
 /** Primera línea de un fichero, sin leerlo entero (las cabeceras de sesión pueden ocupar decenas de KB). */
 export async function firstLine(file, maxBytes = 512 * 1024) {
-  const rl = readline.createInterface({ input: fs.createReadStream(file, { end: maxBytes, encoding: 'utf8' }), crlfDelay: Infinity });
-  try { for await (const line of rl) return line; return ''; } finally { rl.close(); }
+  const { handle, stat } = await openRegularNoFollow(file);
+  try {
+    const length = Math.min(Math.max(0, maxBytes), stat.size);
+    if (!length) return '';
+    const buffer = Buffer.allocUnsafe(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, 0);
+    const bytes = buffer.subarray(0, bytesRead);
+    const newline = bytes.indexOf(0x0a);
+    const line = newline === -1 ? bytes : bytes.subarray(0, newline);
+    return (line.at(-1) === 0x0d ? line.subarray(0, line.length - 1) : line).toString('utf8');
+  } finally { await handle.close(); }
 }
 
 /**
@@ -22,9 +45,10 @@ export async function firstLine(file, maxBytes = 512 * 1024) {
  * Devuelve { offset, changed, mtimeMs }. Lanza si el fichero desapareció.
  */
 export async function tailJsonl(file, offset, onObject) {
-  const handle = await fsp.open(file, 'r');
+  const opened = await openRegularNoFollow(file);
+  const { handle } = opened;
   try {
-    const st = await handle.stat();
+    const st = opened.stat;
     if (st.size < offset) offset = 0; // truncado o reescrito desde cero
     if (st.size === offset) return { offset, changed: false, mtimeMs: st.mtimeMs };
 
