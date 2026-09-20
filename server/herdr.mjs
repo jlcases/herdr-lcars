@@ -1,4 +1,4 @@
-// Cliente del socket UNIX de Herdr (protocolo JSON por líneas).
+// Cliente del socket de Herdr (protocolo JSON por líneas): socket UNIX en POSIX, named pipe en Windows.
 // Una conexión de petición/respuesta por llamada; el snapshot completo cuesta ~10 ms,
 // así que la fuente de verdad es un sondeo periódico + suscripciones por pane para inmediatez.
 import net from 'node:net';
@@ -7,7 +7,24 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { StringDecoder } from 'node:string_decoder';
 
-export const DEFAULT_SOCKET = path.join(os.homedir(), '.config', 'herdr', 'herdr.sock');
+const PIPE_PREFIX = '\\\\.\\pipe\\';
+
+/**
+ * Ruta con la que Herdr identifica su socket. En Windows es una ruta de fichero de marca (contiene
+ * `pid:instante`); el canal real es el named pipe cuyo nombre es esa misma ruta.
+ */
+export function defaultSocketPath({ platform = process.platform, env = process.env, home = os.homedir() } = {}) {
+  if (platform === 'win32') return path.win32.join(env.APPDATA || path.win32.join(home, 'AppData', 'Roaming'), 'herdr', 'herdr.sock');
+  return path.join(home, '.config', 'herdr', 'herdr.sock');
+}
+
+/** Lo que hay que pasarle a `net.createConnection`: en Windows, el named pipe que corresponde a la ruta. */
+export function toEndpoint(socketPath, platform = process.platform) {
+  if (platform !== 'win32' || typeof socketPath !== 'string' || !socketPath) return socketPath;
+  return /^\\\\[?.]\\pipe\\/i.test(socketPath) ? socketPath : PIPE_PREFIX + socketPath;
+}
+
+export const DEFAULT_SOCKET = defaultSocketPath();
 
 let seq = 0;
 const nextId = () => `lcars:${Date.now()}:${++seq}`;
@@ -18,7 +35,7 @@ const MAX_EVENT_LINE_BYTES = 1024 * 1024;
 export function request(method, params = {}, { socketPath = DEFAULT_SOCKET, timeoutMs = 3000 } = {}) {
   return new Promise((resolve, reject) => {
     const id = nextId();
-    const sock = net.createConnection(socketPath);
+    const sock = net.createConnection(toEndpoint(socketPath));
     // Decodificador por streaming: un carácter multibyte partido entre dos segmentos TCP
     // se corrompería si convirtiéramos cada trozo por separado (los títulos llevan acentos).
     const decoder = new StringDecoder('utf8');
@@ -97,7 +114,7 @@ export class StatusSubscription extends EventEmitter {
     clearTimeout(this.retryTimer); this.retryTimer = null;
     this.disconnect();
     if (this.stopped || this.paneIds.size === 0) return;
-    const sock = net.createConnection(this.socketPath);
+    const sock = net.createConnection(toEndpoint(this.socketPath));
     this.sock = sock;
     const decoder = new StringDecoder('utf8');
     let buf = '', bufferedBytes = 0;

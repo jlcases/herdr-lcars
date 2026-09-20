@@ -1,4 +1,4 @@
-// OpenCode: lee su base SQLite con el binario `sqlite3` del sistema, sin dependencias. Cada mensaje del
+// OpenCode: lee su base SQLite con `node:sqlite` o, si falta, con el binario `sqlite3`. Cada mensaje del
 // asistente trae coste real, tokens (con caché y razonamiento), modelo, proveedor y tiempos, así que es
 // la única fuente que aporta coste medido en vez de estimado por tarifa.
 import { execFile } from 'node:child_process';
@@ -6,17 +6,35 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { isSafeSessionId } from '../identifiers.mjs';
+import { pathKey, pathVariants } from '../paths.mjs';
 
 const DB = process.env.OPENCODE_DB || path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'opencode', 'opencode.db');
 const POLL_MS = 3000;
 
-function query(sql) {
+function queryBinary(sql) {
   return new Promise((resolve, reject) => {
-    execFile('sqlite3', ['-json', '-readonly', DB, sql], { maxBuffer: 32 * 1024 * 1024, timeout: 8000 }, (err, stdout) => {
+    execFile('sqlite3', ['-json', '-readonly', DB, sql], { maxBuffer: 32 * 1024 * 1024, timeout: 8000, windowsHide: true }, (err, stdout) => {
       if (err) return reject(err);
       try { resolve(stdout.trim() ? JSON.parse(stdout) : []); } catch (e) { reject(e); }
     });
   });
+}
+
+// `node:sqlite` viene con Node (22.5+; sin bandera desde 22.13) y evita exigir el binario `sqlite3`,
+// que Windows no trae. Si no está, se usa el binario. Se abre y cierra en cada consulta: solo lectura,
+// sin retener la base entre sondeos, y la lectura es síncrona pero de unos milisegundos.
+let nativeLoad = null; // perezoso: el aviso experimental de Node solo sale si de verdad se usa OpenCode
+const nativeSqlite = () => (nativeLoad ??= import('node:sqlite').then((m) => m.DatabaseSync, () => null));
+
+async function queryNative(DatabaseSync, sql) {
+  const db = new DatabaseSync(DB, { readOnly: true });
+  try { return db.prepare(sql).all().map((row) => ({ ...row })); }
+  finally { db.close(); }
+}
+
+async function query(sql) {
+  const DatabaseSync = await nativeSqlite();
+  return DatabaseSync ? queryNative(DatabaseSync, sql) : queryBinary(sql);
 }
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
 const list = (xs) => xs.map(q).join(',') || "''";
@@ -28,7 +46,7 @@ export class OpenCodeAdapter {
     this.sessions = new Map();  // sessionId -> {since, initial}
     this.byPane = new Map();
     this.missing = new Map();
-    this.ready = null;          // ¿hay base y binario sqlite3?
+    this.ready = null;          // ¿hay base y un lector SQLite (node:sqlite o el binario)?
     this.busy = false;
     this.timer = null;
   }
@@ -51,11 +69,11 @@ export class OpenCodeAdapter {
       && !this.byPane.has(a.paneId) && !(this.missing.get(a.paneId)?.next > now)).slice(0, 1000);
     if (unresolved.length) {
       try {
-        const rows = await query(`select id, directory from session where directory in (${list(unresolved.map((a) => a.cwd))}) and parent_id is null and time_updated > ${now - 12 * 3600_000} order by time_updated desc`);
+        const rows = await query(`select id, directory from session where directory in (${list(unresolved.flatMap((a) => pathVariants(a.cwd)))}) and parent_id is null and time_updated > ${now - 12 * 3600_000} order by time_updated desc`);
         const byDir = new Map();
-        for (const r of rows) if (!byDir.has(r.directory)) byDir.set(r.directory, r.id);
+        for (const r of rows) if (!byDir.has(pathKey(r.directory))) byDir.set(pathKey(r.directory), r.id);
         for (const a of unresolved) {
-          const sid = byDir.get(a.cwd);
+          const sid = byDir.get(pathKey(a.cwd));
           if (isSafeSessionId(sid)) { this.byPane.set(a.paneId, sid); this.missing.delete(a.paneId); }
           else { const m = this.missing.get(a.paneId) || { tries: 0 }; m.tries++; m.next = now + Math.min(60_000, 3000 * m.tries); this.missing.set(a.paneId, m); }
         }

@@ -10,8 +10,8 @@ LCARS for Herdr es el centro de mando en vivo para [Herdr](https://herdr.dev): m
 o está bloqueado, controla la cuota de Claude Code y Codex por cuenta y releva contexto verificado
 entre motores sin perder ni duplicar trabajo.
 
-Requisitos de ejecución: Herdr 0.9.0+ y Node 22+. El plugin v0.1.0 funciona en macOS y Linux;
-todavía no soporta Windows.
+Requisitos de ejecución: Herdr 0.9.1+ y Node 22+. El plugin v0.1.0 funciona en macOS y Linux;
+Windows está disponible como **preview** (véase [Windows](#windows-preview)).
 
 Cuando un motor se queda sin cuota o deja de convenir, LCARS abre otro en el mismo checkout, le
 entrega el contexto guardado y mantiene abierto el agente de origen hasta que la persona comprueba
@@ -39,7 +39,7 @@ curl -fsSL https://herdr.dev/install.sh | sh
 Comprueba ambos requisitos antes de continuar:
 
 ```sh
-herdr --version  # debe ser 0.9.0 o posterior
+herdr --version  # debe ser 0.9.1 o posterior
 node --version   # debe ser v22 o posterior
 ```
 
@@ -120,11 +120,46 @@ está en `bridge.log` dentro del directorio de estado del plugin.
 |---|---|---|
 | macOS | Soportado y probado con la flota real. | Claude se lee desde Keychain; el launcher contempla el `PATH` mínimo de launchd. |
 | Linux | Soportado por manifiesto y validado en CI (Node, shell y tests). | Falta todavía una prueba de instalación completa contra un Herdr real en Linux. Claude usa el fichero privado oficial del perfil. |
-| Windows | No soportado por este plugin todavía. | El núcleo Node es portable, pero el manifiesto llama a `sh` y los wrappers son POSIX. Herdr marca los plugins nativos de Windows como *preview*; no se declara `windows` hasta disponer de launcher, statusline y pruebas nativas. |
+| Windows | Preview. Verificado a mano contra un Herdr 0.9.1 real en Windows 11 (Node 26, Claude Code); la batería automática también se ejecuta ahí. | Launcher nativo en Node (`bin/plugin.mjs`); los ids de acción llevan sufijo `-win`. Codex solo se ha probado con rollouts sintéticos (emparejado de rutas); OpenCode lee su base con `node:sqlite` (usa un binario `sqlite3` en Node < 22.13) y se comprobó contra una base real. Véase [Windows](#windows-preview). |
 
-El manifiesto refleja esa verdad con `platforms = ["macos", "linux"]`. Ejecutar solo el servidor con
-Node en Windows no equivale a tener el plugin integrado; añadir `windows` a mano no convierte los
-scripts POSIX en lanzadores nativos.
+El manifiesto declara `platforms = ["macos", "linux", "windows"]`. Cada entrada de macOS/Linux conserva su
+comando `sh` original; cada entrada de Windows es una gemela que ejecuta `node bin/plugin.mjs`.
+
+### Windows (preview)
+
+Herdr exige que los ids de acción y de pane sean únicos dentro de un plugin aunque sus plataformas no
+se solapen, así que las gemelas de Windows llevan el sufijo `-win`: `open-win`, `open-deck-win`,
+`restart-win`, `stop-win`, `fuel-win`, `accounts-win` y `ping-win`. Úsalas en lugar de los ids de la
+tabla anterior, también en los atajos de teclado:
+
+```toml
+[[keys.command]]
+key = "prefix+shift+f"
+type = "plugin_action"
+command = "dev.jlcases.herdr-lcars.open-win"
+description = "panel LCARS"
+```
+
+- `node` debe estar en el `PATH` del servidor de Herdr. `NODE_BIN` en `config.env` elige el intérprete
+  del *puente*, no el del propio launcher.
+- El puente es un proceso desacoplado: sobrevive a la salida del launcher. `stop-win` lo termina con
+  `TerminateProcess`, que no es un apagado ordenado; una escritura de contexto interrumpida deja un
+  bloqueo obsoleto que caduca solo.
+- Antes de matar un PID de `bridge.pid`, el launcher lee la línea de comandos de ese proceso con
+  PowerShell (WMI) y solo continúa si es el `bin/lcars-bridge.mjs` de esta instalación.
+- Los ficheros son privados por las ACL del perfil de usuario, no por modos POSIX (Windows ignora `0700`/`0600`).
+- Claude Code ejecuta el comando `statusLine` a través de Git Bash, así que el `bin/lcars-statusline`
+  existente funciona tal cual. `bin/lcars-statusline.mjs` es su equivalente en Node, sin depender de
+  `sed`/`mktemp`; en `~/.claude/settings.json` usa barras normales para que bash no se coma las contrabarras:
+
+  ```json
+  "statusLine": { "type": "command", "command": "node \"C:/ruta/a/herdr-lcars/bin/lcars-statusline.mjs\" <tu comando de statusline original>" }
+  ```
+
+  Si el comando original es un fragmento de shell y no un único programa, pásalo por `bash -c` con
+  comillas simples: `node "…/lcars-statusline.mjs" bash -c '<comando original>'`.
+- Ejecuta `herdr integration install claude` para que Herdr informe del id de cada sesión de Claude;
+  sin él el puente no puede emparejar un pane con sus datos de sesión (contexto, coste, subagentes).
 
 ### Varias cuentas de Claude o Codex
 
@@ -232,7 +267,7 @@ Con más de 60 agentes las celdas pasan a modo compacto; con más de 140, a modo
    en Linux, de `.credentials.json` dentro del home aislado del perfil, que debe ser privado. El token solo existe en
    memoria durante la petición, no se registra, persiste ni entrega al navegador. Anthropic no documenta ese endpoint
    como API pública estable, por eso cualquier fallo degrada al statusline y al caché en vez de tumbar el puente.
-4. **Statusline de Claude Code**: `bin/lcars-statusline` envuelve el comando de statusline existente y deja el JSON
+4. **Statusline de Claude Code**: `bin/lcars-statusline` (`.mjs` en Windows) envuelve el comando de statusline existente y deja el JSON
    de cada sesión en `~/.cache/lcars-bridge/status/<session>.json`. De ahí salen contexto usado (%), coste acumulado
    según Claude Code y estado de la caché de prompt. Su cuota es un respaldo por sesión, no la autoridad principal.
 5. **Transcript JSONL** (`~/.claude/projects/*/<session>.jsonl`): fallback para sesiones sin OTEL. Da tokens, coste
@@ -419,6 +454,10 @@ herdr-plugin.toml         manifiesto del plugin de Herdr (arranque, acciones, pa
 bin/plugin                entrada del plugin: localiza Node, arranca/para el puente, diagnóstico
 bin/lcars-bridge.mjs      CLI y arranque
 bin/lcars-statusline      wrapper del statusline (deja un JSON por sesión)
+bin/plugin.mjs            launcher de Windows (Node); mismo comportamiento que bin/plugin
+bin/lcars-statusline.mjs  wrapper del statusline para Windows (Node)
+server/launcher.mjs       lógica del launcher: config, arranque/parada, propiedad del PID, ping
+server/paths.mjs          identidad de rutas entre plataformas (Windows: barras, mayúsculas, prefijos \\?\)
 server/index.mjs          HTTP estático + SSE (/events) + OTLP + /api/focus, /api/read, /api/session
 server/telemetry.mjs      almacén por sesión: rangos de fuente, totales, percentiles, series por minuto
 server/herdr.mjs          cliente del socket de Herdr (snapshot, suscripciones, focus, read)

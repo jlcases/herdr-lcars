@@ -11,8 +11,8 @@ import { codexThreadSource } from '../../server/context/adapters/threadSources.m
 import { emptyRecord } from '../../server/context/domain/record.mjs';
 import { contextIdOf } from '../../server/context/domain/ids.mjs';
 import { tailJsonl } from '../../server/jsonl.mjs';
+import { expectMode } from '../helpers.mjs';
 
-const mode = (stat) => stat.mode & 0o777;
 const digest = (id) => createHash('sha256').update(id).digest('base64url');
 const legacySlug = (id) => Buffer.from(id).toString('base64url').slice(0, 80);
 
@@ -70,8 +70,8 @@ test('repositorio: escrituras concurrentes son atómicas y no pierden actualizac
   assert.equal(record.events, 20);
   const files = (await fsp.readdir(dir)).filter((file) => file.endsWith('.json'));
   assert.equal(files.length, 1);
-  assert.equal(mode(await fsp.stat(dir)), 0o700);
-  assert.equal(mode(await fsp.stat(path.join(dir, files[0]))), 0o600);
+  expectMode(await fsp.stat(dir), 0o700);
+  expectMode(await fsp.stat(path.join(dir, files[0])), 0o600);
   assert.equal((await fsp.readdir(dir)).some((file) => file.endsWith('.tmp') || file.endsWith('.lock')), false);
 });
 

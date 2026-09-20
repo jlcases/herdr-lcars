@@ -62,7 +62,7 @@ test('credenciales Claude: Keychain separa perfiles y nunca invoca un shell', as
   assert.equal('shell' in invocations[0].options, false);
 });
 
-test('credenciales Claude: Linux exige el fichero oficial privado', async (t) => {
+test('credenciales Claude: Linux exige el fichero oficial privado', { skip: process.platform === 'win32' && 'Windows no expone permisos POSIX' }, async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-claude-usage-'));
   t.after(() => fsp.rm(root, { recursive: true, force: true }));
   const file = path.join(root, '.credentials.json');

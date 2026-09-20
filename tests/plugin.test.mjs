@@ -6,11 +6,11 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { StatusDropWatcher, isStatusDropName } from '../server/statusdrop.mjs';
+import { NEEDS_SH, expectMode, expectPrivate, symlinkOrSkip } from './helpers.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const mode = (stat) => stat.mode & 0o777;
 
-test('statusline: solo usa session_id seguros y escribe de forma privada', async (t) => {
+test('statusline: solo usa session_id seguros y escribe de forma privada', NEEDS_SH, async (t) => {
   const cache = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-status-test-'));
   t.after(() => fsp.rm(cache, { recursive: true, force: true }));
   const script = path.join(ROOT, 'bin', 'lcars-statusline');
@@ -20,17 +20,17 @@ test('statusline: solo usa session_id seguros y escribe de forma privada', async
   const dir = path.join(cache, 'lcars-bridge', 'status');
   const file = path.join(dir, 'safe-session_1.json');
   assert.equal(await fsp.readFile(file, 'utf8'), valid);
-  assert.equal(mode(await fsp.stat(dir)), 0o700);
-  assert.equal(mode(await fsp.stat(file)), 0o600);
+  expectMode(await fsp.stat(dir), 0o700);
+  expectMode(await fsp.stat(file), 0o600);
   assert.equal(await fsp.readFile(path.join(dir, 'safe-session_1.profile'), 'utf8'), 'claude-work\n');
-  assert.equal(mode(await fsp.stat(path.join(dir, 'safe-session_1.profile'))), 0o600);
+  expectMode(await fsp.stat(path.join(dir, 'safe-session_1.profile')), 0o600);
 
   const malicious = spawnSync('sh', [script], { input: '{"session_id":"../../escape"}\n', encoding: 'utf8', env: { ...process.env, XDG_CACHE_HOME: cache } });
   assert.equal(malicious.status, 0);
   assert.equal((await fsp.readdir(dir)).some((name) => name.includes('escape')), false);
 });
 
-test('plugin: config.env no se ejecuta como shell', async (t) => {
+test('plugin: config.env no se ejecuta como shell', NEEDS_SH, async (t) => {
   const state = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-config-test-'));
   t.after(() => fsp.rm(state, { recursive: true, force: true }));
   const marker = path.join(state, 'executed');
@@ -42,7 +42,7 @@ test('plugin: config.env no se ejecuta como shell', async (t) => {
   await assert.rejects(fsp.access(marker));
 });
 
-test('plugin: crea accounts.json privado sin secretos', async (t) => {
+test('plugin: crea accounts.json privado sin secretos', NEEDS_SH, async (t) => {
   const state = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-profiles-test-'));
   t.after(() => fsp.rm(state, { recursive: true, force: true }));
   await fsp.writeFile(path.join(state, 'config.env'), 'LCARS_PORT=4700\nLCARS_LOW_QUOTA=10\nNODE_BIN=/no-existe\n');
@@ -51,10 +51,10 @@ test('plugin: crea accounts.json privado sin secretos', async (t) => {
   });
   const profiles = JSON.parse(await fsp.readFile(path.join(state, 'accounts.json'), 'utf8'));
   assert.deepEqual(profiles, { version: 1, profiles: [] });
-  assert.equal(mode(await fsp.stat(path.join(state, 'accounts.json'))), 0o600);
+  expectMode(await fsp.stat(path.join(state, 'accounts.json')), 0o600);
 });
 
-test('plugin: migra configuración y cuentas por copia privada sin destruir el rollback', async (t) => {
+test('plugin: migra configuración y cuentas por copia privada sin destruir el rollback', NEEDS_SH, async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-private-migration-test-'));
   t.after(() => fsp.rm(root, { recursive: true, force: true }));
   const state = path.join(root, 'new');
@@ -80,9 +80,9 @@ test('plugin: migra configuración y cuentas por copia privada sin destruir el r
   assert.equal(await fsp.readFile(path.join(state, 'accounts.json'), 'utf8'), legacyAccounts);
   assert.equal(await fsp.readFile(path.join(legacy, 'config.env'), 'utf8'), legacyConfig);
   assert.equal(await fsp.readFile(path.join(legacy, 'accounts.json'), 'utf8'), legacyAccounts);
-  assert.equal(mode(await fsp.stat(state)), 0o700);
-  assert.equal(mode(await fsp.stat(path.join(state, 'config.env'))), 0o600);
-  assert.equal(mode(await fsp.stat(path.join(state, 'accounts.json'))), 0o600);
+  expectMode(await fsp.stat(state), 0o700);
+  expectMode(await fsp.stat(path.join(state, 'config.env')), 0o600);
+  expectMode(await fsp.stat(path.join(state, 'accounts.json')), 0o600);
 
   await fsp.writeFile(path.join(state, 'accounts.json'), '{"version":1,"profiles":[]}\n');
   const repeated = spawnSync('sh', [path.join(ROOT, 'bin', 'plugin'), 'ping'], { encoding: 'utf8', env });
@@ -91,7 +91,7 @@ test('plugin: migra configuración y cuentas por copia privada sin destruir el r
     'una segunda ejecución nunca pisa la configuración nueva');
 });
 
-test('plugin: migra contextos por copia y deja intacto el almacén antiguo', async (t) => {
+test('plugin: migra contextos por copia y deja intacto el almacén antiguo', NEEDS_SH, async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-context-migration-test-'));
   const state = path.join(root, 'new');
   const legacyContexts = path.join(root, 'legacy-contexts');
@@ -139,22 +139,22 @@ exit 1
   const migrated = path.join(state, 'contexts', 'record.json');
   assert.equal(await fsp.readFile(migrated, 'utf8'), '{"schemaVersion":2,"events":[]}\n');
   assert.equal(await fsp.readFile(path.join(legacyContexts, 'record.json'), 'utf8'), '{"schemaVersion":2,"events":[]}\n');
-  assert.equal(mode(await fsp.stat(path.join(state, 'contexts'))), 0o700);
-  assert.equal(mode(await fsp.stat(migrated)) & 0o077, 0, 'los contextos migrados no quedan accesibles a grupo u otros');
+  expectMode(await fsp.stat(path.join(state, 'contexts')), 0o700);
+  expectPrivate(await fsp.stat(migrated), 'los contextos migrados no quedan accesibles a grupo u otros');
 
   const stop = spawnSync('sh', [path.join(ROOT, 'bin', 'plugin'), 'stop'], { encoding: 'utf8', env });
   assert.equal(stop.status, 0, stop.stderr);
   bridgePid = undefined;
 });
 
-test('plugin: rechaza enlaces simbólicos en sus ficheros privados', async (t) => {
+test('plugin: rechaza enlaces simbólicos en sus ficheros privados', NEEDS_SH, async (t) => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-symlink-test-'));
   t.after(() => fsp.rm(root, { recursive: true, force: true }));
   const state = path.join(root, 'state');
   const outside = path.join(root, 'outside');
   await fsp.mkdir(state, { recursive: true });
   await fsp.writeFile(outside, 'LCARS_PORT=4700\n');
-  await fsp.symlink(outside, path.join(state, 'config.env'));
+  if (!await symlinkOrSkip(t, outside, path.join(state, 'config.env'))) return;
   const result = spawnSync('sh', [path.join(ROOT, 'bin', 'plugin'), 'ping'], {
     encoding: 'utf8',
     env: { ...process.env, HOME: root, HERDR_PLUGIN_ROOT: ROOT, HERDR_PLUGIN_STATE_DIR: state, HERDR_PLUGIN_CONFIG_DIR: state },
@@ -174,7 +174,7 @@ test('combustible: recibe cuotas por SSE y reserva las ventanas 5 h y 7 d', asyn
   assert.doesNotMatch(source, /setInterval\(tick/);
 });
 
-test('plugin: rechaza Node 20 porque ya está fuera de soporte', async (t) => {
+test('plugin: rechaza Node 20 porque ya está fuera de soporte', NEEDS_SH, async (t) => {
   const state = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-node-test-'));
   t.after(() => fsp.rm(state, { recursive: true, force: true }));
   const fakeNode = path.join(state, 'node20');
@@ -187,7 +187,7 @@ test('plugin: rechaza Node 20 porque ya está fuera de soporte', async (t) => {
   assert.match(result.stderr, /anterior a Node 22|no encuentro Node 22/);
 });
 
-test('plugin: un PID reciclado de otro proceso nunca se mata', async (t) => {
+test('plugin: un PID reciclado de otro proceso nunca se mata', NEEDS_SH, async (t) => {
   const state = await fsp.mkdtemp(path.join(os.tmpdir(), 'lcars-pid-test-'));
   const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' });
   t.after(async () => { sleeper.kill(); await fsp.rm(state, { recursive: true, force: true }); });
@@ -212,7 +212,7 @@ test('status drop: solo lee ficheros regulares, acotados y con ID seguro', async
   assert.equal(isStatusDropName('safe_1.json'), true);
   assert.equal(isStatusDropName('../escape.json'), false);
   await fsp.writeFile(path.join(dir, 'safe_1.json'), '{"model":{"id":"claude"}}');
-  await fsp.symlink(path.join(dir, 'safe_1.json'), path.join(dir, 'linked.json'));
+  if (!await symlinkOrSkip(t, path.join(dir, 'safe_1.json'), path.join(dir, 'linked.json'))) return;
   const huge = await fsp.open(path.join(dir, 'huge.json'), 'w');
   await huge.truncate(1024 * 1024 + 1); await huge.close();
 
@@ -220,6 +220,6 @@ test('status drop: solo lee ficheros regulares, acotados y con ID seguro', async
   assert.deepEqual(received, [['safe_1', { model: { id: 'claude' } }]]);
   assert.equal(await watcher.readDrop('linked.json'), false);
   assert.equal(await watcher.readDrop('huge.json'), false);
-  assert.equal(mode(await fsp.stat(dir)), 0o700);
-  assert.equal(mode(await fsp.stat(path.join(dir, 'safe_1.json'))), 0o600);
+  expectMode(await fsp.stat(dir), 0o700);
+  expectMode(await fsp.stat(path.join(dir, 'safe_1.json')), 0o600);
 });

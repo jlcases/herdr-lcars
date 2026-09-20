@@ -22,7 +22,7 @@ const statusError = (message) => Object.assign(new Error(message), { status: 400
 function absoluteHome(value, userHome) {
   const raw = clean(value, 4_096);
   if (!raw || raw.includes('\0')) throw statusError('cada perfil necesita un directorio home');
-  const expanded = raw === '~' ? userHome : raw.startsWith('~/') ? path.join(userHome, raw.slice(2)) : raw;
+  const expanded = raw === '~' ? userHome : raw.startsWith('~/') || (path.sep === '\\' && raw.startsWith('~\\')) ? path.join(userHome, raw.slice(2)) : raw;
   if (!path.isAbsolute(expanded)) throw statusError('el home de un perfil debe ser una ruta absoluta o empezar por ~/');
   return path.resolve(expanded);
 }

@@ -1,12 +1,14 @@
 // El statusline de Claude Code recibe por stdin un JSON con contexto, coste, caché y límites.
-// El wrapper bin/lcars-statusline lo deja en ~/.cache/lcars-bridge/status/<session_id>.json y aquí se lee.
+// El wrapper bin/lcars-statusline (o .mjs en Windows) lo deja en ~/.cache/lcars-bridge/status/<session_id>.json y aquí se lee.
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { CACHE_HOME } from './claude.mjs';
 import { mapLimit } from './concurrency.mjs';
 import { isSafeSessionId } from './identifiers.mjs';
 import { readJSONFile } from './safe-json-file.mjs';
+import { renameReplace } from './atomic-rename.mjs';
 
 export const STATUS_DIR = path.join(CACHE_HOME, 'lcars-bridge', 'status');
 const MAX_DROP_BYTES = 1024 * 1024;
@@ -15,6 +17,37 @@ const MAX_DROP_FILES = 4096;
 export const isStatusDropName = (name) => typeof name === 'string'
   && name.endsWith('.json') && isSafeSessionId(name.slice(0, -5));
 const PROFILE_ID = /^[a-z][a-z0-9_-]{0,31}$/;
+
+const WRITER_PROFILE = /^[A-Za-z0-9_-]{1,32}$/;
+
+/** Escribe `<dir>/<name>` de golpe: un lector nunca ve el fichero a medias. */
+async function publish(dir, name, content) {
+  const tmp = path.join(dir, `.${name}.${randomBytes(6).toString('hex')}.tmp`);
+  try {
+    await fsp.writeFile(tmp, content, { mode: 0o600 });
+    await renameReplace(tmp, path.join(dir, name));
+  } finally { await fsp.rm(tmp, { force: true }).catch(() => {}); }
+}
+
+/**
+ * Lado escritor del volcado: lo usa el wrapper del statusline. Devuelve sin lanzar, porque es una
+ * comodidad y nada de lo que falle aquí puede romper la barra de estado.
+ */
+export async function writeStatusDrop(raw, { dir = STATUS_DIR, profile = process.env.LCARS_ACCOUNT_PROFILE } = {}) {
+  try {
+    const sid = /"session_id"s*:s*"([^"]*)"/.exec(raw)?.[1] ?? '';
+    if (!isSafeSessionId(sid)) return false;
+    await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+    await fsp.chmod(dir, 0o700).catch(() => {});
+    // El perfil (no secreto) se publica antes que el JSON, para que el lector no vea una cuota nueva
+    // sin su identidad. Nunca se guarda aquí el token ni el directorio de credenciales.
+    if (profile && WRITER_PROFILE.test(profile)) await publish(dir, `${sid}.profile`, `${profile}
+`);
+    else await fsp.rm(path.join(dir, `${sid}.profile`), { force: true });
+    await publish(dir, `${sid}.json`, raw);
+    return true;
+  } catch { return false; }
+}
 
 export class StatusDropWatcher {
   constructor(store, onDrop, { dir = STATUS_DIR } = {}) {

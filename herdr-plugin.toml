@@ -1,60 +1,125 @@
 # LCARS for Herdr — panel de mando para la flota de agentes de Herdr.
 #
-# Todos los comandos arrancan con `sh`, que vive en /bin: el servidor de Herdr corre bajo launchd
-# con PATH = /usr/bin:/bin:/usr/sbin:/sbin, así que ni `node` ni `npm` son alcanzables desde aquí.
-# `bin/plugin` se encarga de localizar Node antes de hacer nada más.
+# En macOS y Linux todos los comandos arrancan con `sh`, que vive en /bin: el servidor de Herdr corre
+# bajo launchd con PATH = /usr/bin:/bin:/usr/sbin:/sbin, así que ni `node` ni `npm` son alcanzables
+# desde aquí. `bin/plugin` se encarga de localizar Node antes de hacer nada más.
+# En Windows no hay `sh` garantizado: cada entrada tiene una gemela con `platforms = ["windows"]` que
+# llama a `node bin/plugin.mjs` (Herdr resuelve `node.exe` por PATH). Ambos launchers hacen lo mismo.
+# Herdr exige ids únicos por plugin, aunque las plataformas no se solapen: las gemelas de Windows con id
+# llevan el sufijo `-win` (p. ej. `open-win`). Los [[startup]] no tienen id y no lo necesitan.
 id = "dev.jlcases.herdr-lcars"
 name = "LCARS for Herdr"
 version = "0.1.0"
-min_herdr_version = "0.9.0"
+min_herdr_version = "0.9.1"
 description = "Command up to 2,000 Herdr AI agents from one LCARS bridge, track Claude/Codex quota per account, and hand off verified context without losing work."
-platforms = ["macos", "linux"]
+platforms = ["macos", "linux", "windows"]
 
 # Arranque: deja el puente corriendo en segundo plano y sale. No es un demonio supervisado.
 [[startup]]
 command = ["sh", "bin/plugin", "start"]
+platforms = ["macos", "linux"]
+
+[[startup]]
+command = ["node", "bin/plugin.mjs", "start"]
+platforms = ["windows"]
 
 [[actions]]
 id = "open"
 title = "LCARS for Herdr: open dashboard"
 description = "Starts the bridge when needed and opens the ship dashboard in the browser."
 command = ["sh", "bin/plugin", "open"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "open-win"
+title = "LCARS for Herdr: open dashboard (Windows)"
+description = "Starts the bridge when needed and opens the ship dashboard in the browser."
+command = ["node", "bin/plugin.mjs", "open"]
+platforms = ["windows"]
 
 [[actions]]
 id = "open-deck"
 title = "LCARS for Herdr: open compact view"
 description = "Opens the compact deck instead of the ship plan."
 command = ["sh", "bin/plugin", "open", "deck"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "open-deck-win"
+title = "LCARS for Herdr: open compact view (Windows)"
+description = "Opens the compact deck instead of the ship plan."
+command = ["node", "bin/plugin.mjs", "open", "deck"]
+platforms = ["windows"]
 
 [[actions]]
 id = "restart"
 title = "LCARS for Herdr: restart bridge"
 description = "Restarts the bridge process. Open tabs reload automatically."
 command = ["sh", "bin/plugin", "restart"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "restart-win"
+title = "LCARS for Herdr: restart bridge (Windows)"
+description = "Restarts the bridge process. Open tabs reload automatically."
+command = ["node", "bin/plugin.mjs", "restart"]
+platforms = ["windows"]
 
 [[actions]]
 id = "stop"
 title = "LCARS for Herdr: stop bridge"
 description = "Stops the bridge process."
 command = ["sh", "bin/plugin", "stop"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "stop-win"
+title = "LCARS for Herdr: stop bridge (Windows)"
+description = "Stops the bridge process."
+command = ["node", "bin/plugin.mjs", "stop"]
+platforms = ["windows"]
 
 [[actions]]
 id = "fuel"
 title = "LCARS for Herdr: quota by account"
 description = "Opens per-account quota in a popup. Exposed as an action so it can be bound to a key."
 command = ["sh", "bin/plugin", "fuel-pane"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "fuel-win"
+title = "LCARS for Herdr: quota by account (Windows)"
+description = "Opens per-account quota in a popup. Exposed as an action so it can be bound to a key."
+command = ["node", "bin/plugin.mjs", "fuel-pane"]
+platforms = ["windows"]
 
 [[actions]]
 id = "accounts"
 title = "LCARS for Herdr: configure accounts"
 description = "Opens the local profile catalog. It contains aliases and paths, never tokens."
 command = ["sh", "bin/plugin", "accounts"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "accounts-win"
+title = "LCARS for Herdr: configure accounts (Windows)"
+description = "Opens the local profile catalog. It contains aliases and paths, never tokens."
+command = ["node", "bin/plugin.mjs", "accounts"]
+platforms = ["windows"]
 
 [[actions]]
 id = "ping"
 title = "LCARS for Herdr: verify installation"
 description = "Reports Node, bridge, Herdr socket and detected-account health."
 command = ["sh", "bin/plugin", "ping"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "ping-win"
+title = "LCARS for Herdr: verify installation (Windows)"
+description = "Reports Node, bridge, Herdr socket and detected-account health."
+command = ["node", "bin/plugin.mjs", "ping"]
+platforms = ["windows"]
 
 # Cuadro de combustible: cuánta cuota le queda a cada cuenta, en una ventana modal.
 [[panes]]
@@ -64,3 +129,13 @@ placement = "popup"
 width = "70%"
 height = 18
 command = ["sh", "bin/plugin", "fuel"]
+platforms = ["macos", "linux"]
+
+[[panes]]
+id = "fuel-win"
+title = "LCARS for Herdr: quota by account (Windows)"
+placement = "popup"
+width = "70%"
+height = 18
+command = ["node", "bin/plugin.mjs", "fuel"]
+platforms = ["windows"]

@@ -1,11 +1,11 @@
 // Snapshot Git exacto y acotado. El formato -z conserva cualquier nombre de fichero valido.
 import { execFile } from 'node:child_process';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { stableToken } from '../domain/text.mjs';
+import { isInsidePath, normalizePath, realPath } from '../../paths.mjs';
 
 function runGit(args, cwd, { timeout = 8_000 } = {}) {
-  return new Promise((resolve, reject) => execFile('git', args, { cwd, timeout, maxBuffer: 8 << 20, encoding: 'utf8' }, (error, stdout, stderr) => {
+  return new Promise((resolve, reject) => execFile('git', args, { cwd, timeout, maxBuffer: 8 << 20, encoding: 'utf8', windowsHide: true }, (error, stdout, stderr) => {
     if (!error) return resolve(stdout);
     const failure = new Error(`git ${args[0]} fallo${stderr?.trim() ? `: ${stderr.trim().slice(0, 300)}` : ''}`);
     failure.code = error.code; failure.cause = error; reject(failure);
@@ -39,18 +39,19 @@ export class GitWorkspaceProbe {
 
   async #location(cwd) {
     let real;
-    try { real = await fsp.realpath(cwd); } catch { throw Object.assign(new Error('el directorio no existe'), { status: 400 }); }
+    try { real = await realPath(cwd); } catch { throw Object.assign(new Error('el directorio no existe'), { status: 400 }); }
     const cached = this.#locations.get(real);
     if (cached) return cached;
     for (const known of new Set(this.#locations.values())) {
-      if (real === known.checkoutPath || real.startsWith(`${known.checkoutPath}${path.sep}`)) {
+      if (isInsidePath(known.checkoutPath, real)) {
         this.#locations.set(real, known);
         return known;
       }
     }
     try {
       const out = await runGit(['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'], real);
-      const [commonDir, checkoutPath] = out.split('\n').filter(Boolean);
+      // git escribe `C:/repo` en Windows; el resto del sistema maneja `C:\repo`.
+      const [commonDir, checkoutPath] = out.split(/\r?\n/).filter(Boolean).map((line) => normalizePath(line));
       const repoRoot = path.basename(commonDir) === '.git' ? path.dirname(commonDir) : commonDir;
       const location = { repoRoot, checkoutPath };
       this.#locations.set(real, location); this.#locations.set(checkoutPath, location);

@@ -7,6 +7,11 @@ export async function readJSONFile(file, {
   requirePrivate = false,
   platform = process.platform,
 } = {}) {
+  // Windows no tiene O_NOFOLLOW: allí se comprueba antes de abrir, con una ventana de carrera algo
+  // mayor. Los ficheros que se leen así viven en el perfil del usuario, protegido por sus ACL.
+  if (!constants.O_NOFOLLOW && (await fsp.lstat(file)).isSymbolicLink()) {
+    throw Object.assign(new Error('no se siguen enlaces simbólicos'), { code: 'ELOOP' });
+  }
   const handle = await fsp.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
   try {
     const stat = await handle.stat();
