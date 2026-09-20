@@ -254,7 +254,7 @@ Buttons: `SOUND` (a brief completion chime and a stronger blocked-agent alarm), 
 ## Where the data comes from
 
 1. **Herdr** (`~/.config/herdr/herdr.sock`): `session.snapshot` once per second (topology, status,
-   title, cwd, Claude session id) plus `events.subscribe` per pane for immediate state-change
+   title, cwd, and the engine's session reference) plus `events.subscribe` per pane for immediate state-change
    reactions.
 2. **Claude Code OpenTelemetry**: the server is also an OTLP HTTP/JSON receiver
    (`/v1/logs`, `/v1/metrics`). Each `api_request` event provides `ttft_ms`, `duration_ms`,
@@ -289,16 +289,18 @@ Buttons: `SOUND` (a brief completion chime and a stronger blocked-agent alarm), 
 
 ## Other CLIs (adapters)
 
-Herdr reports the agent type for each pane and, for CLIs with an installed integration, the session
-id. The server uses that information to enable one adapter per type (`server/adapters/`):
+Herdr reports the agent type for each pane and, for CLIs with an installed integration, a session
+id or private session-file reference. The server uses it to enable one adapter per type (`server/adapters/`):
 
 | CLI | Source | What it provides |
 |---|---|---|
 | Codex | Rollout JSONL files in `~/.codex/sessions/YYYY/MM/DD/rollout-*-<session>.jsonl` (when Herdr does not report the session, it is matched by working directory) | Per-response tokens (input, cache, output, reasoning), model and effort, real duration and TTFT per turn (`task_complete`), context-window usage, quota limits, tools, and errors |
 | OpenCode | `~/.local/share/opencode/opencode.db` SQLite database read with `sqlite3` | Actual cost, tokens (input, output, reasoning, cache), model and provider, duration per response, child sessions as subagents, tools, and API errors |
+| Pi | The exact session JSONL path reported by the Herdr integration under `~/.pi/agent/sessions/` (with a bounded id lookup as fallback) | Reported tokens and cost per response, model and provider, saved response duration, context-window usage from `models.json`, tools, turns, and errors. Conversation and tool-result content are ignored |
 
 Prices for non-Anthropic models live in `server/pricing-extra.json` (a table derived from CASIA).
-Pending: Kimi, pi, Gemini/Qwen, Grok, and Hermes.
+Pending: Kimi, Gemini/Qwen, Grok, and Hermes. A Pi model whose configured endpoint is loopback is
+marked as local; LCARS does not invent an account quota for it.
 
 ## Definitions
 
@@ -427,6 +429,9 @@ The server exposes terminal content, so it is confined to the local machine:
   descriptions, and error messages.
 - The `lines` parameter of `/api/read` is clamped between 1 and 2000. OTLP has separate limits of
   16 MB compressed and 64 MB decompressed; unknown encodings are rejected.
+- Pi session paths remain server-side and are accepted only below configured session roots. The
+  adapter rejects symbolic links, non-regular files, invalid headers, mismatched session ids/cwds,
+  oversized JSONL reads, and partial or malformed records.
 - CSP, `frame-ancestors 'none'`, COOP/CORP, `nosniff`, a permissions policy, and the absence of
   inline JavaScript reduce the browser attack surface. The typeface is self-hosted.
 - Memory and status drops are private (`0700/0600`). The launcher does not execute `config.env`,
@@ -482,7 +487,7 @@ server/jsonl.mjs          incremental JSONL following (one home for partial fina
 server/transcripts.mjs    transcript fallback when a session does not export OTLP
 server/subagents.mjs      subagents for each session
 server/statusdrop.mjs     statusline-drop reader
-server/adapters/          CLIs (Codex, OpenCode) and official Claude quota; composed in server/index.mjs
+server/adapters/          CLIs (Codex, OpenCode, Pi) and official Claude quota; composed in server/index.mjs
 server/pricing.mjs        per-model rates (+ pricing-extra.json for non-Anthropic models)
 server/limits.mjs         quotas from tmux-agent-indicator
 server/accounts.mjs       one tank per account: identity, windows, pace, and low-quota alert
@@ -498,7 +503,7 @@ tests/                    node --test
 ```
 
 Adding a new CLI takes two steps: add one file under `server/adapters/` with a `static kind` and a
-`sync(agents)` method returning `paneId → sessionId`, then add it to the `ADAPTERS` list in
+`sync(agents)` method returning `paneId → sessionId|null` (`null` revokes a stale resolution), then add it to the `ADAPTERS` list in
 `server/index.mjs`. If its fidelity differs from OTLP, declare that in the `SOURCES` table in
 `server/telemetry.mjs`.
 

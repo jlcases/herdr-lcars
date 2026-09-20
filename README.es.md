@@ -247,8 +247,8 @@ Con más de 60 agentes las celdas pasan a modo compacto; con más de 140, a modo
 
 ## De dónde salen los datos
 
-1. **Herdr** (`~/.config/herdr/herdr.sock`): `session.snapshot` cada segundo (topología, estado, título, cwd,
-   id de sesión de Claude) más `events.subscribe` por pane para reaccionar al instante a los cambios de estado.
+1. **Herdr** (`~/.config/herdr/herdr.sock`): `session.snapshot` cada segundo (topología, estado, título, cwd
+   y referencia de sesión del motor) más `events.subscribe` por pane para reaccionar al instante a los cambios de estado.
 2. **OpenTelemetry de Claude Code**: el servidor es también un receptor OTLP http/json (`/v1/logs`, `/v1/metrics`).
    El evento `api_request` trae por petición `ttft_ms`, `duration_ms`, tokens (input, output, caché lectura/escritura),
    `cost_usd`, modelo, `stop_reason` y `query_source`. Configurado en `~/.claude/settings.json` (`env`):
@@ -276,16 +276,18 @@ Con más de 60 agentes las celdas pasan a modo compacto; con más de 140, a modo
 
 ## Otros CLIs (adaptadores)
 
-Herdr indica el tipo de agente de cada pane y, para los CLIs con integración instalada, el id de sesión. Con eso el
-servidor activa un adaptador por tipo (`server/adapters/`):
+Herdr indica el tipo de agente de cada pane y, para los CLIs con integración instalada, un id o una referencia
+privada al fichero de sesión. Con eso el servidor activa un adaptador por tipo (`server/adapters/`):
 
 | CLI | Fuente | Qué aporta |
 |---|---|---|
 | Codex | Rollouts JSONL en `~/.codex/sessions/AAAA/MM/DD/rollout-*-<session>.jsonl` (si Herdr no reporta la sesión, se empareja por directorio de trabajo) | Tokens por respuesta (entrada, caché, salida, razonamiento), modelo y esfuerzo, duración y TTFT reales por turno (`task_complete`), ventana de contexto usada, límites de cuota, herramientas y errores |
 | OpenCode | SQLite `~/.local/share/opencode/opencode.db` leída con `sqlite3` | Coste real, tokens (entrada, salida, razonamiento, caché), modelo y proveedor, duración por respuesta, sesiones hijas como subagentes, herramientas, errores de API |
+| Pi | Ruta exacta del JSONL de sesión que reporta la integración de Herdr bajo `~/.pi/agent/sessions/` (con búsqueda acotada por id como respaldo) | Tokens y coste reportados por respuesta, modelo y proveedor, duración guardada de la respuesta, uso de ventana de contexto desde `models.json`, herramientas, turnos y errores. Se ignora el contenido de conversación y resultados |
 
-Precios de modelos no Anthropic en `server/pricing-extra.json` (tabla derivada de CASIA). Pendientes: Kimi, pi,
-Gemini/Qwen, Grok, Hermes.
+Precios de modelos no Anthropic en `server/pricing-extra.json` (tabla derivada de CASIA). Pendientes: Kimi,
+Gemini/Qwen, Grok y Hermes. Un modelo Pi cuyo endpoint configurado es loopback se marca como local;
+LCARS no le inventa una cuota de cuenta.
 
 ## Definiciones
 
@@ -413,6 +415,9 @@ El servidor sirve el contenido de los terminales, así que se ciñe a la máquin
   nombres de herramienta, descripciones de subagente y mensajes de error.
 - El parámetro `lines` de `/api/read` se acota entre 1 y 2000. OTLP conserva un límite separado de
   16 MB comprimidos y 64 MB descomprimidos; codificaciones desconocidas se rechazan.
+- Las rutas de sesión de Pi no salen del servidor y solo se aceptan bajo raíces configuradas. El
+  adaptador rechaza enlaces simbólicos, ficheros no regulares, cabeceras inválidas, ids/cwd que no
+  correspondan, lecturas JSONL sobredimensionadas y filas parciales o mal formadas.
 - CSP, `frame-ancestors 'none'`, COOP/CORP, `nosniff`, política de permisos y ausencia de JavaScript
   inline reducen la superficie del navegador. La tipografía se autoaloja.
 - La memoria y los status drops son privados (`0700/0600`). El launcher no ejecuta `config.env`,
@@ -466,7 +471,7 @@ server/jsonl.mjs          seguimiento incremental de JSONL (la última línea a 
 server/transcripts.mjs    respaldo por transcript cuando la sesión no exporta OTLP
 server/subagents.mjs      subagentes de cada sesión
 server/statusdrop.mjs     lector de los volcados del statusline
-server/adapters/          CLIs (codex, opencode) y cuota oficial de Claude; composición en server/index.mjs
+server/adapters/          CLIs (codex, opencode, Pi) y cuota oficial de Claude; composición en server/index.mjs
 server/pricing.mjs        tarifas por modelo (+ pricing-extra.json para los que no son de Anthropic)
 server/limits.mjs         cuotas desde tmux-agent-indicator
 server/accounts.mjs       un depósito por cuenta: identidad, ventanas, ritmo y aviso de cuota baja
@@ -482,7 +487,7 @@ tests/                    node --test
 ```
 
 Añadir un CLI nuevo son dos pasos: un fichero en `server/adapters/` con `static kind` y un `sync(agents)`
-que devuelva `paneId → sessionId`, y una entrada en la lista `ADAPTERS` de `server/index.mjs`. Si su
+que devuelva `paneId → sessionId|null` (`null` revoca una resolución obsoleta), y una entrada en la lista `ADAPTERS` de `server/index.mjs`. Si su
 fidelidad difiere de la de OTLP, se declara en la tabla `SOURCES` de `server/telemetry.mjs`.
 
 ## API
