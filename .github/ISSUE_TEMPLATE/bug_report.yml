@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in LCARS for Herdr
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, tokens, private terminal output, or sensitive context records.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [macOS, Linux]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Herdr and Node versions
+      placeholder: Herdr 0.9.1; Node 22.20.0
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Minimal numbered steps using redacted data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secrets and private terminal/context content.
+          required: true
+        - label: This is not a security vulnerability; those are reported privately per SECURITY.md.
+          required: true

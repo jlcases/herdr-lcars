@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="meta.msd.title">LCARS for Herdr · Centro de mando de agentes de IA</title>
+<meta name="description" data-i18n-content="meta.msd.description" content="Dirige hasta 2.000 agentes de IA con estado en vivo, cuota Claude/Codex por cuenta y relevos de contexto verificados.">
+<meta name="theme-color" content="#000000">
+<link rel="preload" href="fonts/antonio-latin-v22.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="msd.css">
+<link rel="stylesheet" href="context.css">
+<link rel="stylesheet" href="language.css">
+</head>
+<body>
+<a class="skip-link" href="#main-content" data-i18n="skip.mainSystem">Saltar al sistema principal</a>
+<div class="msd">
+  <!-- Marco superior -->
+  <header class="rail rail-top">
+    <div class="cap cap-l"></div>
+    <div class="rail-seg seg-a"><span class="hdr-l">LCARS for Herdr · <b id="h-agents">0</b> <span data-i18n="header.agents">AGENTES</span></span></div>
+    <div class="rail-seg seg-b grow"></div>
+    <div class="rail-seg seg-c"><span id="h-clock">--:--:--</span></div>
+    <div class="rail-seg seg-d grow"></div>
+    <label class="rail-seg seg-lang language-control"><span class="language-label" data-i18n="language.label">Idioma</span><select id="language-select" data-locale-select data-i18n-aria-label="language.select" aria-label="Seleccionar idioma"><option value="es">ES</option><option value="en">EN</option></select></label>
+    <div class="rail-seg seg-e"><span class="hdr-r"><b id="h-host">LCARS for Herdr</b> · <span id="h-link" aria-live="polite" data-i18n="link.label">Enlace</span></span></div>
+    <div class="cap cap-r"></div>
+  </header>
+
+  <!-- Cuerpo: nave + columna de detalle -->
+  <main class="body" id="main-content" tabindex="-1">
+    <section class="ship-wrap" id="ship-wrap">
+      <div class="ship-zoom" role="group" aria-label="Zoom del plano de la nave" data-i18n-aria-label="zoom.group">
+        <button id="ship-zoom-out" type="button" aria-label="Alejar plano" title="Alejar plano" data-i18n-aria-label="zoom.out" data-i18n-title="zoom.out">−</button>
+        <button id="ship-zoom-reset" type="button" aria-label="Restablecer zoom" title="Restablecer zoom" data-i18n-title="zoom.reset">100%</button>
+        <button id="ship-zoom-in" type="button" aria-label="Acercar plano" title="Acercar plano" data-i18n-aria-label="zoom.in" data-i18n-title="zoom.in">+</button>
+      </div>
+      <svg id="ship" viewBox="0 0 3600 1000" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Sección de la flota" data-i18n-aria-label="ship.section">
+        <defs>
+          <linearGradient id="hull" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2a1e2e"/><stop offset="1" stop-color="#120c14"/></linearGradient>
+          <linearGradient id="glow" x1="0" x2="1"><stop offset="0" stop-color="#3366cc" stop-opacity="0"/><stop offset=".5" stop-color="#66aaff"/><stop offset="1" stop-color="#3366cc" stop-opacity="0"/></linearGradient>
+          <filter id="blur"><feGaussianBlur stdDeviation="6"/></filter>
+        </defs>
+        <g id="callouts"></g>
+        <g id="hulls"></g>
+        <g id="decks"></g>
+        <g id="cells"></g>
+        <g id="overlays"></g>
+      </svg>
+    </section>
+    <aside class="side" aria-label="Operaciones de la flota" data-i18n-aria-label="ship.operations">
+      <div class="side-stream">
+        <div class="panel alert">
+          <div class="p-head p-red"><span data-i18n="alert.red">ALERTA ROJA</span><b id="alert-count" aria-live="polite">0</b></div>
+          <ul class="alert-list" id="alert-list"><li class="empty" data-i18n="alert.none">Sin agentes bloqueados</li></ul>
+        </div>
+        <div class="panel detail">
+          <div class="p-head"><span data-i18n="detail.system">DETALLE DEL SISTEMA</span><b id="d-pane">–</b></div>
+          <div class="d-body" id="d-body"><p class="empty" data-i18n="detail.empty.ship">Selecciona un compartimento de la nave.</p></div>
+        </div>
+      </div>
+      <div class="side-detail">
+        <div class="panel engines">
+          <div class="p-head"><span data-i18n="engines.accounts">MOTORES Y CUENTAS</span><b id="engine-count">0 ACTIVOS</b></div>
+          <div class="engine-body" id="engine-accounts"></div>
+        </div>
+        <div class="panel log">
+          <div class="p-head"><span data-i18n="activity.feed">ACTIVIDAD</span><b data-i18n="activity.live">EN VIVO</b></div>
+          <ol id="ticker" aria-label="Registro de eventos" data-i18n-aria-label="events.log"></ol>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Bandas inferiores -->
+  <section class="bands">
+    <div class="band lights" id="lights" aria-label="Agentes por número de panel" data-i18n-aria-label="lights.aria"></div>
+    <div class="band readouts" id="readouts"></div>
+  </section>
+
+  <footer class="rail rail-bottom">
+    <div class="cap cap-l"></div>
+    <div class="rail-seg seg-a"><span class="hdr-l" data-i18n="msd.masterDisplay">PANTALLA MAESTRA DE SISTEMAS</span></div>
+    <div class="rail-seg seg-b grow"></div>
+    <div class="rail-seg seg-c"><button id="btn-sound" class="rail-btn" aria-pressed="false" title="Avisos distintos al terminar y al bloquearse" data-i18n-title="sound.alertTitle">SONIDO OFF</button></div>
+    <div class="rail-seg seg-d grow"></div>
+    <div class="rail-seg seg-e"><a class="rail-btn" href="index.html?classic=1" data-i18n="view.compact">VISTA COMPACTA</a></div>
+    <div class="cap cap-r"></div>
+  </footer>
+</div>
+<script type="module" src="msd.js"></script>
+</body>
+</html>

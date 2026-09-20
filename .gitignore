@@ -1,0 +1,7 @@
+node_modules/
+*.log
+*.tgz
+.DS_Store
+
+# salida de depuración del trazado
+tools/trace-check.png

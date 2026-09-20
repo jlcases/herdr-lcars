@@ -1,0 +1,66 @@
+# LCARS for Herdr — panel de mando para la flota de agentes de Herdr.
+#
+# Todos los comandos arrancan con `sh`, que vive en /bin: el servidor de Herdr corre bajo launchd
+# con PATH = /usr/bin:/bin:/usr/sbin:/sbin, así que ni `node` ni `npm` son alcanzables desde aquí.
+# `bin/plugin` se encarga de localizar Node antes de hacer nada más.
+id = "dev.jlcases.herdr-lcars"
+name = "LCARS for Herdr"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Command up to 2,000 Herdr AI agents from one LCARS bridge, track Claude/Codex quota per account, and hand off verified context without losing work."
+platforms = ["macos", "linux"]
+
+# Arranque: deja el puente corriendo en segundo plano y sale. No es un demonio supervisado.
+[[startup]]
+command = ["sh", "bin/plugin", "start"]
+
+[[actions]]
+id = "open"
+title = "LCARS for Herdr: open dashboard"
+description = "Starts the bridge when needed and opens the ship dashboard in the browser."
+command = ["sh", "bin/plugin", "open"]
+
+[[actions]]
+id = "open-deck"
+title = "LCARS for Herdr: open compact view"
+description = "Opens the compact deck instead of the ship plan."
+command = ["sh", "bin/plugin", "open", "deck"]
+
+[[actions]]
+id = "restart"
+title = "LCARS for Herdr: restart bridge"
+description = "Restarts the bridge process. Open tabs reload automatically."
+command = ["sh", "bin/plugin", "restart"]
+
+[[actions]]
+id = "stop"
+title = "LCARS for Herdr: stop bridge"
+description = "Stops the bridge process."
+command = ["sh", "bin/plugin", "stop"]
+
+[[actions]]
+id = "fuel"
+title = "LCARS for Herdr: quota by account"
+description = "Opens per-account quota in a popup. Exposed as an action so it can be bound to a key."
+command = ["sh", "bin/plugin", "fuel-pane"]
+
+[[actions]]
+id = "accounts"
+title = "LCARS for Herdr: configure accounts"
+description = "Opens the local profile catalog. It contains aliases and paths, never tokens."
+command = ["sh", "bin/plugin", "accounts"]
+
+[[actions]]
+id = "ping"
+title = "LCARS for Herdr: verify installation"
+description = "Reports Node, bridge, Herdr socket and detected-account health."
+command = ["sh", "bin/plugin", "ping"]
+
+# Cuadro de combustible: cuánta cuota le queda a cada cuenta, en una ventana modal.
+[[panes]]
+id = "fuel"
+title = "LCARS for Herdr: quota by account"
+placement = "popup"
+width = "70%"
+height = 18
+command = ["sh", "bin/plugin", "fuel"]

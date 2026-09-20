@@ -1,0 +1,259 @@
+#!/bin/sh
+# Punto de entrada del plugin. Herdr lanza esto con `sh`, que es lo único que se puede dar por
+# sentado: bajo launchd el PATH del servidor es /usr/bin:/bin:/usr/sbin:/sbin y no incluye Node.
+set -eu
+umask 077
+
+ROOT="${HERDR_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+PLUGIN_ID="${HERDR_PLUGIN_ID:-dev.jlcases.herdr-lcars}"
+LEGACY_PLUGIN_ID="dev.jlcases.lcars-bridge"
+STATE_DIR="${HERDR_PLUGIN_STATE_DIR:-$HOME/.cache/lcars-bridge}"
+CONFIG_DIR="${HERDR_PLUGIN_CONFIG_DIR:-$STATE_DIR}"
+LEGACY_CONFIG_DIR="${HERDR_LCARS_LEGACY_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr/plugins/config/$LEGACY_PLUGIN_ID}"
+LEGACY_STATE_DIR="${HERDR_LCARS_LEGACY_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/herdr/plugins/$LEGACY_PLUGIN_ID}"
+LEGACY_CONTEXT_DIR="${HERDR_LCARS_LEGACY_CONTEXT_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/lcars-bridge/contexts}"
+CONTEXT_DIR="$STATE_DIR/contexts"
+
+for private_dir in "$STATE_DIR" "$CONFIG_DIR"; do
+  [ ! -L "$private_dir" ] || { echo "directorio privado no puede ser un enlace: $private_dir" >&2; exit 1; }
+  mkdir -p "$private_dir"
+done
+chmod 700 "$STATE_DIR" "$CONFIG_DIR" 2>/dev/null || true
+PID_FILE="$STATE_DIR/bridge.pid"
+LOG_FILE="$STATE_DIR/bridge.log"
+CONF="$CONFIG_DIR/config.env"
+ACCOUNT_PROFILES="$CONFIG_DIR/accounts.json"
+for private_file in "$PID_FILE" "$LOG_FILE" "$CONF" "$ACCOUNT_PROFILES"; do
+  [ ! -L "$private_file" ] || { echo "fichero privado no puede ser un enlace: $private_file" >&2; exit 1; }
+done
+
+# El primer ID de desarrollo fue dev.jlcases.lcars-bridge. Una instalación nueva copia, nunca
+# mueve, sus dos ficheros privados para que el rollback siga siendo posible. Solo se activa cuando
+# Herdr declara explícitamente el ID nuevo; los tests y la ejecución suelta no leen el home real.
+migrate_private_file() {
+  source_file="$1" target_file="$2"
+  [ ! -e "$target_file" ] || return 0
+  [ -f "$source_file" ] && [ ! -L "$source_file" ] || return 0
+  cp "$source_file" "$target_file"
+  chmod 600 "$target_file" 2>/dev/null || true
+}
+if [ "${HERDR_PLUGIN_ID:-}" = "dev.jlcases.herdr-lcars" ] || [ "${HERDR_LCARS_MIGRATE_FROM:-}" = "$LEGACY_PLUGIN_ID" ]; then
+  migrate_private_file "$LEGACY_CONFIG_DIR/config.env" "$CONF"
+  migrate_private_file "$LEGACY_CONFIG_DIR/accounts.json" "$ACCOUNT_PROFILES"
+fi
+
+if [ ! -f "$CONF" ]; then
+  cat > "$CONF" <<'CONFEOF'
+# Configuración de LCARS for Herdr. Se lee en cada arranque del puente.
+
+# Puerto del panel y del receptor OTLP. Si lo cambias, actualiza también
+# OTEL_EXPORTER_OTLP_ENDPOINT en ~/.claude/settings.json.
+LCARS_PORT=4700
+
+# Aviso de poca cuota: porcentaje restante por debajo del cual se notifica, por cuenta.
+LCARS_LOW_QUOTA=10
+
+# Ruta a Node si la detección automática falla (Node 22 o superior).
+# NODE_BIN=/opt/homebrew/bin/node
+CONFEOF
+fi
+chmod 600 "$CONF" 2>/dev/null || true
+if [ ! -f "$ACCOUNT_PROFILES" ]; then
+  cat > "$ACCOUNT_PROFILES" <<'PROFILESEOF'
+{
+  "version": 1,
+  "profiles": []
+}
+PROFILESEOF
+fi
+chmod 600 "$ACCOUNT_PROFILES" 2>/dev/null || true
+
+# `config.env` es datos, no un script. Solo se leen las tres claves admitidas, sin `source` ni eval.
+config_value() {
+  key="$1" default="$2"
+  value="$(sed -n "s/^${key}=//p" "$CONF" 2>/dev/null | tail -n 1)"
+  value="${value#\"}"; value="${value%\"}"
+  value="${value#\'}"; value="${value%\'}"
+  [ -n "$value" ] && printf '%s' "$value" || printf '%s' "$default"
+}
+[ -n "${LCARS_PORT:-}" ] || LCARS_PORT="$(config_value LCARS_PORT 4700)"
+[ -n "${LCARS_LOW_QUOTA:-}" ] || LCARS_LOW_QUOTA="$(config_value LCARS_LOW_QUOTA 10)"
+[ -n "${NODE_BIN:-}" ] || NODE_BIN="$(config_value NODE_BIN '')"
+case "$LCARS_PORT" in ''|*[!0-9]*) echo "LCARS_PORT debe ser un entero entre 1 y 65535" >&2; exit 2 ;; esac
+case "$LCARS_LOW_QUOTA" in ''|*[!0-9]*) echo "LCARS_LOW_QUOTA debe ser un entero entre 0 y 100" >&2; exit 2 ;; esac
+[ "${#LCARS_PORT}" -le 5 ] || { echo "LCARS_PORT fuera de rango" >&2; exit 2; }
+[ "${#LCARS_LOW_QUOTA}" -le 3 ] || { echo "LCARS_LOW_QUOTA fuera de rango" >&2; exit 2; }
+[ "$LCARS_PORT" -ge 1 ] && [ "$LCARS_PORT" -le 65535 ] || { echo "LCARS_PORT fuera de rango" >&2; exit 2; }
+[ "$LCARS_LOW_QUOTA" -le 100 ] || { echo "LCARS_LOW_QUOTA fuera de rango" >&2; exit 2; }
+PORT="$LCARS_PORT"
+LCARS_ACCOUNT_PROFILES="$ACCOUNT_PROFILES"
+HERDR_LCARS_CONTEXT_DIR="$CONTEXT_DIR"
+export LCARS_PORT LCARS_LOW_QUOTA LCARS_ACCOUNT_PROFILES HERDR_LCARS_CONTEXT_DIR
+
+# --- Node ---------------------------------------------------------------------------------------
+# Se acepta el primer intérprete con versión mayor >= 22. Los gestores de versiones se consultan
+# en orden lexicográfico descendente, portable también en el `sort` BSD de macOS.
+node_ok() { [ -x "$1" ] && [ "$("$1" -e 'process.stdout.write(String(process.versions.node.split(".")[0]))' 2>/dev/null || echo 0)" -ge 22 ] 2>/dev/null; }
+
+find_node() {
+  if [ -n "${NODE_BIN:-}" ]; then
+    node_ok "$NODE_BIN" && { echo "$NODE_BIN"; return 0; }
+    echo "NODE_BIN=$NODE_BIN no sirve (¿falta, no es ejecutable o es anterior a Node 22?)" >&2
+    return 1
+  fi
+  for c in "$(command -v node 2>/dev/null || true)" /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node "$HOME/.volta/bin/node" "$HOME/.bun/bin/node"; do
+    [ -n "$c" ] && node_ok "$c" && { echo "$c"; return 0; }
+  done
+  for base in "$HOME/.nvm/versions/node" "$HOME/.local/share/fnm/node-versions" "$HOME/Library/Application Support/fnm/node-versions" "$HOME/.asdf/installs/nodejs"; do
+    [ -d "$base" ] || continue
+    # Los gestores usan nombres de versión sin espacios; `ls` evita romper la ruta base, que sí
+    # puede contenerlos (Application Support). La salida no se usa para rutas arbitrarias.
+    # shellcheck disable=SC2012
+    for v in $(ls -1 "$base" 2>/dev/null | sort -r); do
+      for c in "$base/$v/bin/node" "$base/$v/installation/bin/node"; do
+        node_ok "$c" && { echo "$c"; return 0; }
+      done
+    done
+  done
+  return 1
+}
+
+NODE="$(find_node || true)"
+require_node() {
+  [ -n "$NODE" ] && return 0
+  echo "LCARS for Herdr: no encuentro Node 22 o superior." >&2
+  echo "Escribe la ruta en NODE_BIN dentro de $CONF" >&2
+  exit 1
+}
+
+herdr_bin() { echo "${HERDR_BIN_PATH:-herdr}"; }
+notify() {
+  if [ -n "${3:-}" ]; then "$(herdr_bin)" notification show "$1" --body "$2" --sound "$3" >/dev/null 2>&1 || true
+  else "$(herdr_bin)" notification show "$1" --body "$2" >/dev/null 2>&1 || true
+  fi
+}
+read_pid_file() {
+  pid="$(cat "$1" 2>/dev/null || true)"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s' "$pid"
+}
+read_pid() { read_pid_file "$PID_FILE"; }
+process_belongs_to_bridge() {
+  pid="$1"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 1
+  command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  case "$command_line" in *"$ROOT/bin/lcars-bridge.mjs"*) return 0 ;; *) return 1 ;; esac
+}
+alive() { process_belongs_to_bridge "$(read_pid || true)"; }
+legacy_pid() { read_pid_file "$LEGACY_STATE_DIR/bridge.pid"; }
+legacy_alive() { process_belongs_to_bridge "$(legacy_pid || true)"; }
+
+migrate_contexts() {
+  if [ -d "$CONTEXT_DIR" ] && [ ! -L "$CONTEXT_DIR" ]; then chmod 700 "$CONTEXT_DIR" 2>/dev/null || true; return 0; fi
+  [ ! -e "$CONTEXT_DIR" ] || { echo "directorio de contexto no válido: $CONTEXT_DIR" >&2; return 1; }
+  if [ -d "$LEGACY_CONTEXT_DIR" ] && [ ! -L "$LEGACY_CONTEXT_DIR" ]; then
+    migration="$STATE_DIR/.contexts-migrate.$$"
+    cp -R "$LEGACY_CONTEXT_DIR" "$migration"
+    chmod -R go-rwx "$migration" 2>/dev/null || true
+    mv "$migration" "$CONTEXT_DIR"
+  else
+    mkdir -p "$CONTEXT_DIR"
+  fi
+  chmod 700 "$CONTEXT_DIR" 2>/dev/null || true
+}
+# shellcheck disable=SC2016
+healthy() { [ -n "$NODE" ] && "$NODE" -e '
+  const u = `http://127.0.0.1:${process.env.LCARS_PORT}/api/state`;
+  const t = setTimeout(() => process.exit(1), 2500);
+  fetch(u).then(async (r) => {
+    const body = await r.json().catch(() => null); clearTimeout(t);
+    process.exit(r.ok && body?.bootId && body?.herdr ? 0 : 1);
+  }).catch(() => { clearTimeout(t); process.exit(1); });
+' 2>/dev/null; }
+
+start() {
+  require_node
+  # Solo se reutiliza el proceso que demuestra pertenecer a esta instalación. Una respuesta HTTP
+  # cualquiera en el puerto no concede propiedad sobre el proceso ni permiso para matarlo.
+  if alive; then
+    if healthy; then return 0; fi
+    kill "$(read_pid)" 2>/dev/null || true
+    sleep 1
+  elif legacy_alive; then
+    # Migración única desde el ID de desarrollo: misma raíz comprobada, PID conocido y rollback
+    # conservado. El estado se copia después de parar al escritor antiguo.
+    kill "$(legacy_pid)" 2>/dev/null || true
+    sleep 1
+  elif healthy; then
+    echo "el puerto $PORT ya responde, pero el proceso no pertenece a LCARS for Herdr" >&2
+    return 1
+  fi
+  migrate_contexts
+  if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE")" -gt 5242880 ]; then mv -f "$LOG_FILE" "$LOG_FILE.1"; fi
+  printf '\n--- arranque %s ---\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$LOG_FILE"
+  HERDR_SOCKET_PATH="${HERDR_SOCKET_PATH:-}" nohup "$NODE" "$ROOT/bin/lcars-bridge.mjs" --port "$PORT" >> "$LOG_FILE" 2>&1 &
+  printf '%s\n' "$!" > "$PID_FILE"
+  i=0
+  while [ "$i" -lt 25 ]; do healthy && return 0; i=$((i + 1)); sleep 0.4; done
+  echo "el puente no respondió en el puerto $PORT; mira $LOG_FILE" >&2
+  return 1
+}
+
+stop() {
+  if alive; then kill "$(read_pid)" 2>/dev/null || true; fi
+  rm -f "$PID_FILE"
+}
+
+open_url() {
+  url="http://127.0.0.1:$PORT/${1:-}"
+  if command -v open >/dev/null 2>&1; then open "$url"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$url"
+  else echo "$url"; fi
+}
+open_file() {
+  if command -v open >/dev/null 2>&1; then open "$1"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1"
+  else echo "$1"; fi
+}
+
+case "${1:-open}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; sleep 1; start ;;
+  open)
+    if ! start; then notify "LCARS for Herdr" "No pudo arrancar. Revisa el registro del plugin." request; exit 1; fi
+    # Cada acción abre exactamente lo que dice: el plano de la nave o la cubierta compacta.
+    # La raíz sigue eligiendo sola por la forma de la ventana, pero eso sorprende cuando el
+    # navegador no está a pantalla completa, así que las acciones no la usan.
+    if [ "${2:-}" = "deck" ]; then open_url "index.html?classic=1"; else open_url "msd.html"; fi
+    ;;
+  fuel-pane)
+    # Las teclas solo se pueden atar a acciones, no a panes; esta acción abre el pane por CLI.
+    exec "$(herdr_bin)" plugin pane open --plugin "$PLUGIN_ID" --entrypoint fuel
+    ;;
+  fuel)
+    require_node
+    start >/dev/null 2>&1 || true
+    exec "$NODE" "$ROOT/tools/fuel.mjs"
+    ;;
+  accounts)
+    open_file "$ACCOUNT_PROFILES"
+    ;;
+  ping)
+    body="Node: ${NODE:-NO ENCONTRADO}"
+    if healthy; then body="$body · puente OK en :$PORT"; else body="$body · puente CAÍDO en :$PORT"; fi
+    if [ -S "${HERDR_SOCKET_PATH:-/nonexistent}" ]; then body="$body · socket OK"; else body="$body · sin socket"; fi
+    if [ -n "$NODE" ] && healthy; then
+      # shellcheck disable=SC2016
+      n="$("$NODE" -e '
+        fetch(`http://127.0.0.1:${process.env.LCARS_PORT}/api/state`).then((r) => r.json()).then((s) => {
+          process.stdout.write(`${(s.accounts || []).length} cuentas · ${(s.agents || []).length} agentes`);
+        }).catch(() => process.stdout.write("sin datos"));
+      ' 2>/dev/null || echo '')"
+      [ -n "$n" ] && body="$body · $n"
+    fi
+    echo "$body"
+    notify "LCARS for Herdr" "$body" "done"
+    ;;
+  *) echo "uso: plugin {start|stop|restart|open [deck]|fuel|fuel-pane|accounts|ping}" >&2; exit 2 ;;
+esac

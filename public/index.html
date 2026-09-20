@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="meta.compact.title">LCARS for Herdr · Centro de mando de agentes de IA</title>
+<meta name="description" data-i18n-content="meta.compact.description" content="Dirige hasta 2.000 agentes de IA con estado en vivo, cuota Claude/Codex por cuenta y relevos de contexto verificados.">
+<meta name="theme-color" content="#000000">
+<link rel="preload" href="fonts/antonio-latin-v22.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="lcars.css">
+<link rel="stylesheet" href="context.css">
+<link rel="stylesheet" href="language.css">
+<script src="viewport.js"></script>
+</head>
+<body data-density="normal">
+<a class="skip-link" href="#main-content" data-i18n="skip.deck">Saltar a la cubierta</a>
+<div id="app" class="frame">
+  <!-- Cabecera: codo LCARS superior -->
+  <header class="top">
+    <div class="elbow elbow-top"></div>
+    <div class="topbar">
+      <div class="bar bar-orange"><span class="lbl" id="clock">--:--:--</span></div>
+      <div class="bar bar-peach grow"><span class="lbl title" data-i18n="header.fleetOperations">OPERACIONES DE FLOTA · LCARS for Herdr</span></div>
+      <div class="bar bar-lilac"><span class="lbl" id="link-state" aria-live="polite" data-i18n="link.label">Enlace</span></div>
+      <label class="bar bar-sky language-control"><span class="language-label" data-i18n="language.label">Idioma</span><select id="language-select" data-locale-select data-i18n-aria-label="language.select" aria-label="Seleccionar idioma"><option value="es">ES</option><option value="en">EN</option></select></label>
+      <button class="bar bar-sky btn" id="btn-sound" aria-pressed="false" title="Avisos distintos al terminar y al bloquearse" data-i18n-title="sound.alertTitle">SONIDO OFF</button>
+      <button class="bar bar-blue btn" id="btn-wall" aria-pressed="false" title="Modo pantalla de sala" data-i18n="room.mode" data-i18n-title="room.title">SALA</button>
+      <a class="bar bar-peri btn" href="msd.html" title="Pantalla maestra de sistemas (ultra-ancho)" data-i18n-title="view.msd">MSD</a>
+    </div>
+  </header>
+
+  <!-- Columna izquierda: barras de navegación LCARS -->
+  <nav class="side" aria-label="Filtrar agentes por estado" data-i18n-aria-label="filters.aria">
+    <button type="button" class="side-seg seg-orange" data-filter="all"><span data-i18n="filters.all">TODOS</span><b id="n-all">0</b></button>
+    <button type="button" class="side-seg seg-red" data-filter="blocked"><span data-i18n="filters.blocked">BLOQUEADOS</span><b id="n-blocked">0</b></button>
+    <button type="button" class="side-seg seg-amber" data-filter="working"><span data-i18n="filters.working">TRABAJANDO</span><b id="n-working">0</b></button>
+    <button type="button" class="side-seg seg-sky" data-filter="done"><span data-i18n="filters.done">TERMINADOS</span><b id="n-done">0</b></button>
+    <button type="button" class="side-seg seg-peri" data-filter="idle"><span data-i18n="filters.idle">EN ESPERA</span><b id="n-idle">0</b></button>
+    <button type="button" class="side-seg seg-grey" data-filter="unknown"><span data-i18n="filters.unknown">SIN CLASIFICAR</span><b id="n-unknown">0</b></button>
+    <div class="side-fill"></div>
+    <div class="side-seg seg-lilac small"><span>LCARS for Herdr</span><b>0.1</b></div>
+  </nav>
+
+  <!-- Contenido -->
+  <main class="main" id="main-content" tabindex="-1">
+    <section class="stats" aria-label="Indicadores de flota" data-i18n-aria-label="stats.aria">
+      <div class="tile hero">
+        <div class="t-label" data-i18n="stats.connected">Agentes conectados</div>
+        <div class="t-value" id="s-active">0</div>
+        <div class="t-sub" id="s-active-sub">0 trabajando · 0 en espera · 0 terminados</div>
+      </div>
+      <div class="tile">
+        <div class="t-label" data-i18n="stats.recentOutput">Salida reciente</div>
+        <div class="t-value"><span id="s-tpm">–</span><small> tok/min · 2 min</small></div>
+        <svg class="spark" id="spark-fleet" viewBox="0 0 120 28" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="tile">
+        <div class="t-label" data-i18n="stats.medianSpeed">Velocidad mediana</div>
+        <div class="t-value"><span id="s-tps">–</span><small> tok/s</small></div>
+        <div class="t-sub" id="s-tps-sub" data-i18n="stats.decoding">decodificación, sin TTFT</div>
+      </div>
+      <div class="tile">
+        <div class="t-label" data-i18n="stats.medianTTFT">TTFT mediana</div>
+        <div class="t-value"><span id="s-ttft">–</span><small> ms</small></div>
+        <div class="t-sub" id="s-ttft-sub" data-i18n="stats.needsOtel">requiere OTEL (sesiones nuevas)</div>
+      </div>
+      <div class="tile">
+        <div class="t-label" data-i18n="stats.liveCost">Coste sesiones vivas</div>
+        <div class="t-value"><span id="s-cost">–</span></div>
+        <div class="t-sub" id="s-cost-sub" data-i18n="stats.apiEstimate">estimado por tarifa API</div>
+      </div>
+      <div class="tile meters" id="meters"></div>
+    </section>
+
+    <section class="deck" id="deck" aria-label="Cubierta de agentes" data-i18n-aria-label="deck.aria"></section>
+  </main>
+
+  <!-- Columna derecha: alerta roja + detalle -->
+  <aside class="right">
+    <div class="panel alert" id="alert-panel">
+      <div class="p-head bar-red"><span data-i18n="alert.red">ALERTA ROJA</span><b id="alert-count" aria-live="polite">0</b></div>
+      <ul class="alert-list" id="alert-list"><li class="empty" data-i18n="alert.none">Sin agentes bloqueados</li></ul>
+    </div>
+    <div class="panel detail" id="detail">
+      <div class="p-head bar-peach"><span data-i18n="detail.title">DETALLE</span><span class="detail-head-actions"><b id="d-pane">–</b><button type="button" class="detail-close" id="btn-detail-close" aria-label="Cerrar" data-i18n="common.close" data-i18n-aria-label="common.close">Cerrar</button></span></div>
+      <div class="d-body" id="d-body"><p class="empty" data-i18n="detail.empty.deck">Selecciona un agente de la cubierta.</p></div>
+    </div>
+  </aside>
+
+  <!-- Ticker inferior -->
+  <footer class="ticker">
+    <div class="elbow elbow-bottom"></div>
+    <div class="tk-bar bar-orange"><span data-i18n="events.register">REGISTRO</span></div>
+    <ol class="tk-list" id="ticker"></ol>
+  </footer>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

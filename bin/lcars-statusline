@@ -1,0 +1,57 @@
+#!/bin/sh
+# Wrapper del statusline de Claude Code: guarda el JSON de la sesión para LCARS for Herdr y
+# encadena el comando original (pasado como argumentos) para que la barra siga igual.
+umask 077
+dir="${XDG_CACHE_HOME:-$HOME/.cache}/lcars-bridge/status"
+if ! tmp=$(mktemp "${TMPDIR:-/tmp}/lcars-status.XXXXXX"); then
+  [ $# -gt 0 ] && exec "$@"
+  exit 0
+fi
+target_tmp=''
+profile_tmp=''
+cleanup() {
+  rm -f "$tmp"
+  [ -z "$target_tmp" ] || rm -f "$target_tmp"
+  [ -z "$profile_tmp" ] || rm -f "$profile_tmp"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+cat > "$tmp"
+sid=$(sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp" | head -1)
+case "$sid" in ''|*[!A-Za-z0-9_-]*) sid='' ;; esac
+if [ -n "$sid" ] && [ "${#sid}" -le 200 ]; then
+  mkdir -p "$dir" 2>/dev/null
+  chmod 700 "$dir" 2>/dev/null || true
+  # Perfil no secreto de la sesión. Permite atribuir la cuota cuando conviven varias cuentas;
+  # nunca se guarda aquí el token ni el directorio de credenciales. Se publica antes del JSON para
+  # que el watcher no pueda observar una cuota nueva sin su identidad.
+  profile="${LCARS_ACCOUNT_PROFILE:-}"
+  case "$profile" in ''|*[!A-Za-z0-9_-]*) profile='' ;; esac
+  if [ -n "$profile" ] && [ "${#profile}" -le 32 ]; then
+    profile_tmp=$(mktemp "$dir/.$sid.profile.XXXXXX") || profile_tmp=''
+    if [ -n "$profile_tmp" ]; then
+      if printf '%s\n' "$profile" > "$profile_tmp" && chmod 600 "$profile_tmp" 2>/dev/null && mv -f "$profile_tmp" "$dir/$sid.profile" 2>/dev/null; then
+        profile_tmp=''
+      fi
+    fi
+  else
+    rm -f "$dir/$sid.profile"
+  fi
+  target_tmp=$(mktemp "$dir/.$sid.XXXXXX") || target_tmp=''
+  if [ -n "$target_tmp" ]; then
+    if cp "$tmp" "$target_tmp" 2>/dev/null && chmod 600 "$target_tmp" 2>/dev/null && mv -f "$target_tmp" "$dir/$sid.json" 2>/dev/null; then
+      target_tmp=''
+    fi
+  fi
+fi
+if [ $# -gt 0 ]; then
+  "$@" < "$tmp"
+  rc=$?
+else
+  rc=0
+fi
+cleanup
+trap - EXIT HUP INT TERM
+exit $rc

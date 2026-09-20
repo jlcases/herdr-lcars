@@ -1,0 +1,56 @@
+/* Antonio v22, autoalojada bajo OFL (public/fonts/OFL-Antonio.txt). */
+@font-face {
+  font-family: 'Antonio'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url('fonts/antonio-latin-v22.woff2') format('woff2');
+}
+
+/* Controles compartidos por LCARS y MSD. La paleta la aporta cada tema. */
+.skip-link {
+  position: fixed; z-index: 1000; top: 8px; left: 8px; padding: 8px 12px;
+  background: var(--ctx-accent); color: #000; transform: translateY(-160%);
+  text-decoration: none; font-weight: 700; border-radius: 3px;
+}
+.skip-link:focus { transform: translateY(0); }
+:where(a, button, select, [role="button"], [tabindex]):focus-visible {
+  outline: 3px solid var(--ctx-accent); outline-offset: 2px;
+}
+.swap-box {
+  background: var(--ctx-surface); border-left: 4px solid var(--ctx-accent);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 9px; text-transform: none;
+}
+.swap-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: 13px; line-height: 1.6; color: var(--ink-dim); margin-bottom: 7px; }
+.swap-head b { color: var(--ctx-heading); }
+.swap-quality { margin-left: auto; color: #000; background: var(--ctx-heading); padding: 2px 6px; font-size: 13px; line-height: 1.35; font-weight: 700; text-transform: uppercase; }
+.swap-quality.basic { background: var(--orange); }
+.swap-quality.empty { background: var(--red); }
+.swap-mem { margin-bottom: 7px; }
+.mem-line { font-size: 13px; color: var(--ink); line-height: 1.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mem-line span { color: var(--ctx-muted); display: inline-block; min-width: 64px; text-transform: uppercase; }
+.swap-row { display: flex; align-items: end; gap: 6px; }
+.swap-field { display: flex; flex: 1; flex-direction: column; gap: 5px; color: var(--ctx-muted); font-size: 13px; line-height: 1.5; text-transform: uppercase; }
+#swap-profile-slot { display: flex; flex: 1; min-width: 0; }
+.swap-row select { width: 100%; min-height: 30px; background: var(--ctx-deep); color: var(--ink); border: 1px solid var(--ctx-border); border-radius: 3px; padding: 4px 6px; font: inherit; }
+.swap-row button, .swap-confirm button, .swap-retry {
+  min-height: 30px; background: var(--ctx-accent); color: #000; border: 0; border-radius: 3px;
+  padding: 6px 10px; font: inherit; font-weight: 700; text-transform: uppercase; font-size: 13px; line-height: 1.35; cursor: pointer;
+}
+.swap-row button:hover, .swap-confirm button:hover, .swap-retry:hover { filter: brightness(1.12); }
+.swap-box > .swap-retry { margin-top: 7px; }
+.swap-row button:active, .swap-confirm button:active, .swap-retry:active { transform: translateY(1px); }
+.swap-row button:disabled { cursor: wait; opacity: .7; }
+.swap-note { font-size: 13px; color: var(--ctx-muted); margin-top: 7px; line-height: 1.6; }
+.swap-warn, .swap-ok, .swap-loading { font-size: 13px; line-height: 1.6; }
+.swap-warn { color: var(--red); }
+.swap-ok { color: var(--ctx-accent); }
+.swap-loading { color: var(--ctx-heading); }
+.swap-loading::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; background: var(--ctx-heading); animation: swap-pulse .9s ease-in-out infinite; }
+.swap-confirm { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--ctx-border); color: var(--ink); font-size: 13px; }
+.swap-confirm-actions { display: flex; gap: 6px; margin-top: 7px; }
+.swap-confirm .secondary { background: var(--ctx-deep); color: var(--ink); border: 1px solid var(--ctx-border); }
+.swap-hist { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 7px; color: var(--ctx-muted); font-size: 13px; line-height: 1.6; }
+.swap-hist span { background: var(--ctx-deep); border-radius: 3px; padding: 1px 5px; color: var(--ctx-muted); }
+.swap-legacy { margin-top: 7px; color: var(--orange); font-size: 13px; line-height: 1.6; }
+@keyframes swap-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
