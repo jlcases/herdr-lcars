@@ -111,9 +111,9 @@ test('motores: separa agentes activos de cuentas con telemetría de cuota', () =
 
 test('detalle del sistema: un workspace conserva visibles e identificables todos sus agentes', () => {
   const agents = [
-    { paneId: 'wB:p1', workspaceLabel: 'multimodal', tabLabel: 'core', agent: 'codex', status: 'working', statusSince: Date.now() - 20_000, title: 'Recupera la conversación', sessionId: 's1' },
-    { paneId: 'wB:p2', workspaceLabel: 'multimodal', tabLabel: 'video2', agent: 'codex', status: 'idle', statusSince: Date.now() - 60_000, title: 'Confirma el repositorio', sessionId: 's2' },
-    { paneId: 'wB:p3', workspaceLabel: 'multimodal', tabLabel: 'video3', agent: 'claude', status: 'blocked', statusSince: Date.now() - 120_000, title: 'Render bloqueado', sessionId: 's3' },
+    { paneId: 'wB:p1', workspaceLabel: 'multimodal', tabLabel: 'core', agent: 'codex', status: 'working', statusSince: Date.now() - 20_000, title: 'Recupera la conversación', cwd: '/repo/worktrees/videos/core', sessionId: 's1' },
+    { paneId: 'wB:p2', workspaceLabel: 'multimodal', tabLabel: 'video2', agent: 'codex', status: 'idle', statusSince: Date.now() - 60_000, title: 'Confirma el repositorio', cwd: '/repo/worktrees/videos/video2', sessionId: 's2' },
+    { paneId: 'wB:p3', workspaceLabel: 'multimodal', tabLabel: 'video3', agent: 'claude', status: 'blocked', statusSince: Date.now() - 120_000, title: 'Render bloqueado', cwd: 'C:\\repo\\videos\\video3', sessionId: 's3' },
   ];
   const html = workspaceAgentsHTML({ id: 'wB', label: 'multimodal' }, agents, {
     s1: { model: 'gpt-5', recent: { tokPerSecLast: 73 }, totals: { output: 12_000 }, costUsd: 1.25 },
@@ -124,10 +124,29 @@ test('detalle del sistema: un workspace conserva visibles e identificables todos
   for (const name of ['>core<', '>video2<', '>video3<']) assert.match(html, new RegExp(name));
   for (const fullName of ['multimodal / core', 'multimodal / video2', 'multimodal / video3']) assert.match(html, new RegExp(fullName));
   for (const task of ['Recupera la conversación', 'Confirma el repositorio', 'Render bloqueado']) assert.match(html, new RegExp(task));
-  assert.match(html, /Codex \(OpenAI\) · wB:p1/);
-  assert.match(html, /Claude Code · wB:p3/);
+  assert.match(html, /Codex \(OpenAI\), panel wB:p1/);
+  assert.match(html, /Claude Code, panel wB:p3/);
+  assert.match(html, /…\/worktrees\/videos\/core/);
+  assert.match(html, /…\/repo\/videos\/video3/);
+  assert.equal((html.match(/class="workspace-agent-node"/g) || []).length, 3);
   assert.match(html, /data-agent-pane="wB:p2" aria-pressed="true"/);
   assert.match(html, /3 agentes · 1 trabajando · 1 bloqueados/);
+});
+
+test('detalle del sistema: el árbol explica un workspace vacío y no inventa identidades', () => {
+  const empty = workspaceAgentsHTML({ id: 'w0', label: 'vacío' }, [], {}, null);
+  assert.match(empty, /Este workspace no tiene agentes conectados/);
+  assert.doesNotMatch(empty, /data-agent-pane=/);
+  assert.doesNotMatch(empty, /undefined|null/);
+
+  const unnamed = workspaceAgentsHTML({ id: 'w1', label: 'tools' }, [{
+    paneId: 'w1:pR', workspaceLabel: 'tools', tabLabel: '', agent: 'codex', status: 'unexpected',
+    statusSince: null, title: '', cwd: '', sessionId: null,
+  }], {}, null);
+  assert.match(unnamed, />w1:pR</);
+  assert.match(unnamed, /Sin clasificar/);
+  assert.match(unnamed, /carpeta no informada/);
+  assert.doesNotMatch(unnamed, /st-unexpected/);
 });
 
 test('cabeceras: distinguen agentes conectados de trabajo y salida reciente', async () => {
