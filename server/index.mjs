@@ -25,6 +25,7 @@ import { createClaudeThreadSource, createCodexThreadSource } from './context/ada
 import { execFile } from 'node:child_process';
 import { isSafeSessionId } from './identifiers.mjs';
 import { mapLimit } from './concurrency.mjs';
+import { samePath } from './paths.mjs';
 
 // Un CLI nuevo entra aquí y en su fichero de adaptador; el resto del servidor no cambia.
 const ADAPTERS = [CodexAdapter, OpenCodeAdapter];
@@ -243,7 +244,7 @@ export async function startServer({
   /** Notificación nativa de Herdr; si no está disponible, el evento del registro ya queda anotado. */
   const notify = (title, body) => {
     const bin = process.env.HERDR_BIN_PATH || 'herdr';
-    execFile(bin, ['notification', 'show', title, '--body', body, '--sound', 'request'], { timeout: 5000 }, (e) => {
+    execFile(bin, ['notification', 'show', title, '--body', body, '--sound', 'request'], { timeout: 5000, windowsHide: true }, (e) => {
       if (e) log.warn(`notificación: ${e.message}`);
     });
   };
@@ -423,7 +424,7 @@ export async function startServer({
   }
   let engineKinds = ['claude', 'codex', 'opencode'];
   await new Promise((done) => {
-    execFile(process.env.HERDR_BIN_PATH || 'herdr', ['integration', 'status'], { timeout: 8000 }, (e, out) => {
+    execFile(process.env.HERDR_BIN_PATH || 'herdr', ['integration', 'status'], { timeout: 8000, windowsHide: true }, (e, out) => {
       if (!e && out) {
         const installed = out.split('\n').filter((l) => /:\s*current|:\s*v?\d/.test(l)).map((l) => l.split(':')[0].trim());
         if (installed.length) engineKinds = installed.filter((k) => /^[a-z0-9][a-z0-9_-]{0,39}$/i.test(k)).slice(0, 40);
@@ -624,7 +625,7 @@ export async function startServer({
       if (url.pathname === '/api/remember' && req.method === 'POST') {
         const body = await readJSON(req);
         const agent = body.pane_id ? byPane.get(body.pane_id) : null;
-        const cwdAgent = typeof body.cwd === 'string' ? agents.find((candidate) => candidate.cwd === body.cwd) : null;
+        const cwdAgent = typeof body.cwd === 'string' ? agents.find((candidate) => samePath(candidate.cwd, body.cwd)) : null;
         const cwd = agent?.cwd || cwdAgent?.cwd;
         if (!cwd) return json(res, 404, { error: 'el contexto no pertenece a un agente activo' });
         // Se pasa lo que venga: quién decide qué es recordable es el caso de uso, no el transporte.

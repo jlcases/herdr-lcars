@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { migrateRecord } from '../domain/record.mjs';
 import { readJSONFile } from '../../safe-json-file.mjs';
+import { renameReplace } from '../../atomic-rename.mjs';
 
 const STORE_VERSION = 1;
 const MAX_RECORD_BYTES = 4 * 1024 * 1024;
@@ -132,7 +133,7 @@ export class FileContextRepository {
       await handle.writeFile(JSON.stringify(envelope));
       await handle.sync();
       await handle.close(); handle = null;
-      await fsp.rename(tmp, file);
+      await renameReplace(tmp, file);
       await fsp.chmod(file, 0o600);
       let directory;
       try { directory = await fsp.open(this.dir, 'r'); await directory.sync(); }

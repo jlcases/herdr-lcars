@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import { startServer } from '../server/index.mjs';
+import { openCommand } from '../server/platform.mjs';
 
 const args = process.argv.slice(2);
 const get = (flag, def) => { const i = args.indexOf(flag); return i !== -1 && args[i + 1] ? args[i + 1] : def; };
@@ -30,8 +31,8 @@ process.on('uncaughtException', (error) => {
 try { app = await startServer({ port, host, socketPath, log }); }
 catch (error) { log.error(error?.message || error); process.exit(1); }
 if (args.includes('--open')) {
-  const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
-  const opener = spawn(cmd, [app.url], { stdio: 'ignore', detached: true });
+  const [cmd, cmdArgs] = openCommand(app.url);
+  const opener = spawn(cmd, cmdArgs, { stdio: 'ignore', detached: true, windowsHide: true });
   opener.on('error', (error) => log.warn(`no se pudo abrir el navegador: ${error.message}`));
   opener.unref();
 }

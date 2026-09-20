@@ -7,6 +7,7 @@ import path from 'node:path';
 import { tailJsonl, firstLine } from '../jsonl.mjs';
 import { mapLimit } from '../concurrency.mjs';
 import { isSafeSessionId } from '../identifiers.mjs';
+import { pathKey } from '../paths.mjs';
 
 const DEFAULT_ROOT = process.env.LCARS_CODEX_SESSIONS || path.join(os.homedir(), '.codex', 'sessions');
 const POLL_MS = 1500;
@@ -84,7 +85,7 @@ async function recentByCwd(roots) {
       } catch { return null; }
     });
     const index = new Map();
-    for (const meta of metas.filter(Boolean)) if (!index.has(meta.cwd)) index.set(meta.cwd, meta);
+    for (const meta of metas.filter(Boolean)) if (!index.has(pathKey(meta.cwd))) index.set(pathKey(meta.cwd), meta);
     return index;
   })().catch((error) => { cwdIndexPromise = null; throw error; });
   return cwdIndexPromise;
@@ -93,7 +94,7 @@ async function recentByCwd(roots) {
 /** Rollout reciente cuyo cwd coincide, para panes cuyo id de sesión Herdr no reporta. */
 async function locateByCwd(cwd, roots) {
   if (typeof cwd !== 'string' || !cwd || cwd.length > 4096) return null;
-  return (await recentByCwd(roots)).get(cwd) || null;
+  return (await recentByCwd(roots)).get(pathKey(cwd)) || null;
 }
 
 class Follower {
