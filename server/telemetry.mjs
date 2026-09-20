@@ -10,6 +10,7 @@ const SOURCES = {
   otlp: { rank: 3, approx: false, label: 'OTEL' },          // medido por Claude Code (TTFT y duración reales)
   codex: { rank: 3, approx: false, label: 'codex' },        // rollout de Codex (TTFT y duración reales)
   opencode: { rank: 3, approx: false, label: 'opencode' },  // base de OpenCode (coste real)
+  pi: { rank: 3, approx: false, label: 'pi' },              // JSONL nativo de Pi (tokens y coste reportados)
   transcript: { rank: 1, approx: true, label: 'transcript ~' }, // reconstruido del transcript: sin TTFT
 };
 const rankOf = (source) => SOURCES[source]?.rank ?? 0;
@@ -80,6 +81,8 @@ export class SessionTelemetry {
     this.lastActivity = 0;
     this.model = null;
     this.effort = null;
+    this.provider = null;
+    this.local = null;
     this.firstSeen = Date.now();
     this.dirty = true;
   }
@@ -210,11 +213,14 @@ export class SessionTelemetry {
     this.rateLimits = normalizeRateLimits(rl); this.rateLimitsAt = observedAt; this.dirty = true;
     return true;
   }
-  setIdentity({ model, effort } = {}) {
+  setIdentity({ model, effort, provider, local } = {}) {
     const safeModel = boundedText(model, 200), safeEffort = boundedText(effort, 80);
+    const safeProvider = boundedText(provider, 120);
     if (safeModel) this.model = safeModel;
     if (safeEffort) this.effort = safeEffort;
-    if (safeModel || safeEffort) this.dirty = true;
+    if (safeProvider) this.provider = safeProvider;
+    if (typeof local === 'boolean') this.local = local;
+    if (safeModel || safeEffort || safeProvider || typeof local === 'boolean') this.dirty = true;
   }
 
   /** JSON del statusline de Claude Code, traducido al vocabulario del panel. */
@@ -285,6 +291,8 @@ export class SessionTelemetry {
       approx: SOURCES[this.source]?.approx ?? true,
       model: this.model,
       effort: this.effort,
+      provider: this.provider,
+      local: this.local,
       totals: { ...this.totals, costUsd: +this.totals.costUsd.toFixed(4) },
       // Coste ya resuelto: el acumulado del statusline cubre la sesión entera y gana a lo que hemos visto.
       costUsd: +(st.cost?.total_cost_usd ?? this.totals.costUsd).toFixed(4),

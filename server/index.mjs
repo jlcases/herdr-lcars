@@ -14,6 +14,7 @@ import { StatusDropWatcher } from './statusdrop.mjs';
 import { SubagentWatcher } from './subagents.mjs';
 import { CodexAdapter } from './adapters/codex.mjs';
 import { OpenCodeAdapter } from './adapters/opencode.mjs';
+import { PiAdapter } from './adapters/pi.mjs';
 import { ClaudeUsageMonitor } from './adapters/claude-usage.mjs';
 import { readLimits } from './limits.mjs';
 import { AccountRegistry } from './accounts.mjs';
@@ -26,9 +27,10 @@ import { execFile } from 'node:child_process';
 import { isSafeSessionId } from './identifiers.mjs';
 import { mapLimit } from './concurrency.mjs';
 import { samePath } from './paths.mjs';
+import { agentSessionRef } from './agent-session-ref.mjs';
 
 // Un CLI nuevo entra aquí y en su fichero de adaptador; el resto del servidor no cambia.
-const ADAPTERS = [CodexAdapter, OpenCodeAdapter];
+const ADAPTERS = [CodexAdapter, OpenCodeAdapter, PiAdapter];
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const PUBLIC_REAL = await fsp.realpath(PUBLIC);
@@ -197,6 +199,7 @@ export async function startServer({
 
   let agents = [];                 // agentes normalizados desde Herdr
   let byPane = new Map(), bySession = new Map(); // índices: los eventos no barren la lista entera
+  let sessionPaths = new Map();    // referencias privadas para adaptadores; nunca cruzan la API
   let workspaces = [];
   let agentsVersion = 0;
   let limits = null;
@@ -276,9 +279,8 @@ export async function startServer({
 
   const transcripts = new TranscriptWatcher(store, relay, { roots: () => profileCatalog.roots('claude', 'projects') });
   const subagents = new SubagentWatcher(relay, { roots: () => profileCatalog.roots('claude', 'projects') });
-  const adapters = ADAPTERS.map((Adapter) => Adapter === CodexAdapter
-    ? new Adapter(store, relay, { roots: () => profileCatalog.roots('codex', 'sessions') })
-    : new Adapter(store, relay));
+  const adapters = ADAPTERS.map((Adapter) => new Adapter(store, relay,
+    Adapter.kind === 'codex' ? { roots: () => profileCatalog.roots('codex', 'sessions') } : undefined));
   // Memoria de contexto: se escribe sola mientras los motores trabajan, y es lo que viaja en un relevo.
   const memory = buildContextMemory({
     socketPath, log, profiles: profileCatalog,
@@ -337,7 +339,7 @@ export async function startServer({
     const ws = new Map(workspaceList.map((w) => [w.id, w]));
     const tabs = new Map(tabList.map((tab) => [tab.id, tab]));
     const prevByPane = byPane;
-    const list = [], nextByPane = new Map(), nextBySession = new Map();
+    const list = [], nextByPane = new Map(), nextBySession = new Map(), nextSessionPaths = new Map();
     let changed = rawAgents.length !== agents.length;
 
     for (const raw of rawAgents) {
@@ -345,8 +347,10 @@ export async function startServer({
       const paneId = clipText(raw?.pane_id, 120), workspaceId = clipText(raw?.workspace_id, 120);
       if (!paneId || !workspaceId || nextByPane.has(paneId)) continue;
       const tabId = clipText(raw?.tab_id, 120), w = ws.get(workspaceId), t = tabs.get(tabId), prev = prevByPane.get(paneId);
-      const candidate = (raw.agent_session?.kind === 'id' ? raw.agent_session.value : null) || resolvedSessions.get(paneId) || null;
+      const ref = agentSessionRef(raw.agent_session);
+      const candidate = (ref?.kind === 'id' ? ref.value : null) || resolvedSessions.get(paneId) || null;
       const sid = isSafeSessionId(candidate) ? candidate : null;
+      if (ref?.kind === 'path') nextSessionPaths.set(paneId, ref.value);
       const title = clipText(raw.terminal_title_stripped || raw.terminal_title || '', 1000);
       const label = w?.label || workspaceId;
       const status = statusOf(raw.agent_status);
@@ -368,7 +372,7 @@ export async function startServer({
       if (sid) nextBySession.set(sid, agent);
     }
     if (list.length !== agents.length) changed = true;
-    byPane = nextByPane; bySession = nextBySession;
+    byPane = nextByPane; bySession = nextBySession; sessionPaths = nextSessionPaths;
     accounts.prunePanes(new Set(nextByPane.keys()));
     workspaces = workspaceList;
     return { list, changed };
@@ -411,18 +415,23 @@ export async function startServer({
       await mapLimit(adapters, 2, async (ad) => {
         const mine = agents.filter((a) => a.agent === ad.constructor.kind);
         try {
-          const map = await ad.sync(mine.map((a) => ({ paneId: a.paneId, sessionId: a.sessionId, cwd: a.cwd })));
-          for (const [pane, sid] of map) if (isSafeSessionId(sid)) resolvedSessions.set(pane, sid);
+          const map = await ad.sync(mine.map((a) => ({
+            paneId: a.paneId, sessionId: a.sessionId, sessionPath: sessionPaths.get(a.paneId) || null, cwd: a.cwd,
+          })));
+          for (const [pane, sid] of map) {
+            if (isSafeSessionId(sid)) resolvedSessions.set(pane, sid);
+            else if (sid === null) resolvedSessions.delete(pane);
+          }
         } catch (error) { log.warn(`${ad.constructor.kind}: ${error.message}`); }
       });
     } catch (e) {
       if (!herdrError) log.warn(`herdr: ${e.message}`);
       herdrError = clipText(e?.message, 2_000) || 'error de Herdr';
-      agents = []; byPane = new Map(); bySession = new Map();
+      agents = []; byPane = new Map(); bySession = new Map(); sessionPaths = new Map();
       agentsVersion++;
     } finally { polling = false; }
   }
-  let engineKinds = ['claude', 'codex', 'opencode'];
+  let engineKinds = ['claude', 'codex', 'opencode', 'pi'];
   await new Promise((done) => {
     execFile(process.env.HERDR_BIN_PATH || 'herdr', ['integration', 'status'], { timeout: 8000, windowsHide: true }, (e, out) => {
       if (!e && out) {
