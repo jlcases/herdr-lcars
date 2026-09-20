@@ -220,7 +220,7 @@ export function subagentsHTML(s) {
  */
 export function workspaceAgentsHTML(workspace, agents, sessions = {}, selectedPane = null) {
   const ordered = [...(agents || [])].sort((a, b) => (
-    String(a.tabLabel || a.paneId).localeCompare(String(b.tabLabel || b.paneId), undefined, { numeric: true })
+    String(a.tabLabel || a.paneId || '').localeCompare(String(b.tabLabel || b.paneId || ''), undefined, { numeric: true })
   ));
   const count = (status) => ordered.filter((agent) => statusOf(agent.status) === status).length;
   const label = workspace?.label || ordered[0]?.workspaceLabel || workspace?.id || '';
@@ -229,15 +229,24 @@ export function workspaceAgentsHTML(workspace, agents, sessions = {}, selectedPa
     working: count('working'),
     blocked: count('blocked'),
   });
-  const cards = ordered.map((a) => {
+  const compactPath = (value) => {
+    const normalized = String(value || '').replaceAll('\\', '/').replace(/\/+$/, '');
+    const parts = normalized.split('/').filter(Boolean);
+    if (!parts.length) return '';
+    const tail = parts.slice(-3).join('/');
+    return parts.length > 3 ? `…/${tail}` : tail;
+  };
+  const rows = ordered.map((a) => {
     const status = statusOf(a.status);
     const s = sessions[a.sessionId] || {};
     const r = s.recent || {};
     const tab = String(a.tabLabel || '').trim();
-    const name = tab || label || a.paneId;
+    const name = tab || a.paneId || label || t('detail.noTitle');
     const fullName = tab && tab.toLocaleLowerCase(getLocaleTag()) !== label.toLocaleLowerCase(getLocaleTag())
       ? `${label} / ${tab}` : name;
     const engine = ENGINE_LABEL[a.agent] || a.agent || t('detail.noData');
+    const fullPath = String(a.cwd || '');
+    const path = compactPath(fullPath) || t('workspace.noDirectory');
     const speed = r.tokPerSecLast ?? r.tokPerSecP50;
     const metrics = [
       speed != null ? `${Math.round(speed)} tok/s` : null,
@@ -245,18 +254,20 @@ export function workspaceAgentsHTML(workspace, agents, sessions = {}, selectedPa
       s.costUsd != null ? fmtUsd(s.costUsd) : null,
     ].filter(Boolean).join(' · ') || t('detail.noData');
     const active = a.paneId === selectedPane;
-    return `<button type="button" class="workspace-agent st-${esc(status)}${active ? ' selected' : ''}" data-agent-pane="${esc(a.paneId)}" aria-pressed="${active}" aria-label="${esc(t('workspace.agentAria', { name: fullName, status: STATUS_LABEL[status], task: a.title || t('detail.noTitle') }))}">
-      <span class="workspace-agent-top"><strong>${esc(name)}</strong><span class="workspace-agent-state"><i aria-hidden="true"></i>${esc(STATUS_LABEL[status])} · ${esc(fmtAge(a.statusSince))}</span></span>
-      <span class="workspace-agent-id">${esc(engine)} · ${esc(a.paneId)}</span>
-      <span class="workspace-agent-task">${esc(a.title || t('detail.noTitle'))}</span>
-      <span class="workspace-agent-metrics">${esc(metrics)}</span>
-    </button>`;
+    return `<li class="workspace-agent-node">
+      <button type="button" class="workspace-agent st-${esc(status)}${active ? ' selected' : ''}" data-agent-pane="${esc(a.paneId)}" aria-pressed="${active}" aria-label="${esc(t('workspace.agentAria', { name: fullName, engine, pane: a.paneId, status: STATUS_LABEL[status], task: a.title || t('detail.noTitle'), folder: path }))}">
+        <span class="workspace-agent-top"><strong>${esc(name)}</strong><span class="workspace-agent-state"><i aria-hidden="true"></i>${esc(STATUS_LABEL[status])} · ${esc(fmtAge(a.statusSince))}</span></span>
+        <span class="workspace-agent-id"><b>${esc(engine)}</b><span aria-hidden="true"> · </span>${esc(a.paneId)}</span>
+        <span class="workspace-agent-task">${esc(a.title || t('detail.noTitle'))}</span>
+        <span class="workspace-agent-bottom"><span class="workspace-agent-path" title="${esc(fullPath)}"><b>${esc(t('workspace.folder'))}</b> · ${esc(path)}</span><span class="workspace-agent-metrics">${esc(metrics)}</span></span>
+      </button>
+    </li>`;
   }).join('');
   return `<section class="workspace-master" aria-label="${esc(t('workspace.agentsAria', { name: label }))}">
     <div class="workspace-master-head"><div><span>${esc(t('workspace.group'))}</span><h3>${esc(label)}</h3></div><b>${esc(tp('unit.agent', ordered.length))}</b></div>
     <p class="workspace-master-summary">${esc(summary)}</p>
-    <div class="workspace-agent-list">${cards}</div>
-    ${selectedPane ? '' : `<p class="workspace-master-help">${esc(t('workspace.chooseAgent'))}</p>`}
+    ${rows ? `<ol class="workspace-agent-list">${rows}</ol>` : `<p class="workspace-master-empty" role="status">${esc(t('workspace.noAgents'))}</p>`}
+    ${selectedPane || !rows ? '' : `<p class="workspace-master-help">${esc(t('workspace.chooseAgent'))}</p>`}
   </section>`;
 }
 
