@@ -36,3 +36,20 @@ Run `npm run release:check` before requesting review. Do not weaken a security l
 claim merely to make a test pass.
 
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## Releases
+
+A merged PR is not a release. Add a short English and Spanish entry to `CHANGELOG.md` under
+`Unreleased` for each user-visible change; do not bump the version for every PR. For an urgent
+security fix, consider a separate patch release rather than waiting for a feature batch.
+
+Prepare one focused release PR that moves the selected entries to a numbered changelog section and
+updates `package.json`, `package-lock.json`, `herdr-plugin.toml`, and both README install commands.
+`npm run check` rejects mismatched versions. Run `npm run release:check` locally and wait for Linux
+and Windows CI plus CodeQL on the exact release commit. No product code or account data belongs in
+the release PR.
+
+Only after the release PR is merged, tag that exact `main` commit with a new immutable `vX.Y.Z`
+tag and create a GitHub Release using the bilingual changelog section as its notes. Verify a clean
+Herdr installation with `herdr plugin install jlcases/herdr-lcars --ref vX.Y.Z --yes`, then invoke
+`ping` and `open`. Never move an existing release tag or treat a green merge as publication.
