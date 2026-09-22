@@ -31,7 +31,7 @@
   ],
   "scripts": {
     "start": "node bin/lcars-bridge.mjs",
-    "check": "node tools/check-source.mjs",
+    "check": "node tools/check-source.mjs && node tools/check-release.mjs",
     "check:shell": "shellcheck -S warning bin/plugin bin/lcars-statusline",
     "test": "node --test tests/*.test.mjs tests/*/*.test.mjs",
     "release:check": "npm run check && npm run check:shell && npm test && npm pack --dry-run"
