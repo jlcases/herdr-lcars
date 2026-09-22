@@ -1,6 +1,6 @@
 {
   "name": "herdr-lcars",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Command up to 2,000 Herdr AI agents from one LCARS bridge, track Claude/Codex quota per account, and hand off verified context without losing work.",
   "repository": {
     "type": "git",
@@ -23,6 +23,7 @@
     "server/",
     "tools/fuel.mjs",
     "herdr-plugin.toml",
+    "CHANGELOG.md",
     "README.es.md",
     "docs/",
     "NOTICE.md",
@@ -30,7 +31,7 @@
   ],
   "scripts": {
     "start": "node bin/lcars-bridge.mjs",
-    "check": "node tools/check-source.mjs",
+    "check": "node tools/check-source.mjs && node tools/check-release.mjs",
     "check:shell": "shellcheck -S warning bin/plugin bin/lcars-statusline",
     "test": "node --test tests/*.test.mjs tests/*/*.test.mjs",
     "release:check": "npm run check && npm run check:shell && npm test && npm pack --dry-run"

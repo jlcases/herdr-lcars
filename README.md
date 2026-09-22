@@ -4,13 +4,13 @@
 
 **Command up to 2,000 AI agents from one LCARS bridge.**
 
-**Release v0.1.0** · **English** · [Español](README.es.md)
+**Release v0.2.0** · **English** · [Español](README.es.md) · [Changelog](CHANGELOG.md)
 
 LCARS for Herdr is the live command center for [Herdr](https://herdr.dev): see who is working or
 blocked, track Claude Code and Codex quota per account, and hand off verified context between
 engines without losing or duplicating work.
 
-Runtime requirements: Herdr 0.9.1+ and Node 22+. Plugin v0.1.0 supports macOS and Linux; Windows is
+Runtime requirements: Herdr 0.9.1+ and Node 22+. Plugin v0.2.0 supports macOS and Linux; Windows is
 available as a **preview** (see [Windows](#windows-preview)).
 
 When an engine runs out of quota or is no longer the right choice, LCARS opens another one in the
@@ -46,12 +46,12 @@ node --version   # must be v22 or newer
 Start Herdr at least once with `herdr`; LCARS talks only to its local socket and cannot operate
 without it.
 
-## 2. Install LCARS for Herdr v0.1.0
+## 2. Install LCARS for Herdr v0.2.0
 
 Install the stable release from GitHub:
 
 ```sh
-herdr plugin install jlcases/herdr-lcars --ref v0.1.0 --yes
+herdr plugin install jlcases/herdr-lcars --ref v0.2.0 --yes
 herdr plugin action invoke dev.jlcases.herdr-lcars.ping     # verify the installation
 herdr plugin action invoke dev.jlcases.herdr-lcars.open     # open the dashboard
 ```
